@@ -1,0 +1,615 @@
+/**
+ * XL2 Web Server - Improved Modular Version
+ * NTi Audio XL2 Web Interface with GPS Logging
+ * 
+ * This is the refactored version of the original server.js with:
+ * - Modular architecture
+ * - Improved error handling
+ * - Better configuration management
+ * - Enhanced security
+ * - Comprehensive logging
+ * - Input validation
+ * - Memory optimization
+ */
+
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Import our modular components
+import { appConfig } from './src/config/AppConfig.js';
+import { logger } from './src/utils/logger.js';
+import { ErrorHandler } from './src/utils/errors.js';
+import { XL2Connection } from './src/devices/XL2Connection.js';
+import GPSLogger from './gps-logger.js';
+import { createApiRoutes, createApiLogger } from './src/routes/apiRoutes.js';
+import { 
+  setupSocketHandlers, 
+  setupXL2EventForwarding, 
+  setupGPSEventForwarding 
+} from './src/sockets/socketHandlers.js';
+import { createCSVService } from './src/services/csvService.js';
+import { RPI_CONFIG, detectPiModel, systemHealth } from './config-rpi.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+/**
+ * Application Class
+ */
+class XL2WebServer {
+  constructor() {
+    this.app = null;
+    this.server = null;
+    this.io = null;
+    this.xl2 = null;
+    this.gpsLogger = null;
+    this.csvService = null;
+    this.config = null;
+    this.isShuttingDown = false;
+  }
+
+  /**
+   * Initialize the application
+   */
+  async initialize() {
+    try {
+      // Initialize configuration
+      this.config = await appConfig.initialize();
+      logger.info('🚀 Starting XL2 Web Server', appConfig.getSummary());
+
+      // Detect Raspberry Pi model if applicable
+      if (RPI_CONFIG.isRaspberryPi) {
+        const piModel = await detectPiModel();
+        if (piModel) {
+          this.config.platform.piModel = piModel;
+          logger.info(`🍓 Detected Pi Model: ${piModel}`);
+        }
+      }
+
+      // Initialize services
+      await this.initializeServices();
+      
+      // Setup Express application
+      await this.setupExpress();
+      
+      // Setup Socket.IO
+      await this.setupSocketIO();
+      
+      // Setup routes
+      await this.setupRoutes();
+      
+      // Setup error handling
+      this.setupErrorHandling();
+      
+      // Setup system monitoring
+      this.setupSystemMonitoring();
+      
+      logger.info('✅ Application initialization complete');
+      
+    } catch (error) {
+      logger.error('❌ Failed to initialize application', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Initialize core services
+   */
+  async initializeServices() {
+    logger.info('🔧 Initializing services...');
+    
+    // Initialize XL2 connection
+    this.xl2 = new XL2Connection();
+    
+    // Initialize GPS logger
+    this.gpsLogger = new GPSLogger();
+    
+    // Initialize CSV service
+    this.csvService = createCSVService(this.config.data.csvPath);
+    
+    // Set up measurement logging callback
+    this.xl2.onMeasurement = async (dbValue) => {
+      if (this.gpsLogger.isLogging) {
+        await this.gpsLogger.logMeasurement(dbValue);
+      }
+    };
+    
+    logger.info('✅ Services initialized');
+  }
+
+  /**
+   * Setup Express application with middleware
+   */
+  async setupExpress() {
+    logger.info('🌐 Setting up Express application...');
+    
+    this.app = express();
+    this.server = createServer(this.app);
+
+    // Security middleware
+    this.app.use(helmet({
+      contentSecurityPolicy: this.config.security.helmet.contentSecurityPolicy,
+      crossOriginEmbedderPolicy: this.config.security.helmet.crossOriginEmbedderPolicy
+    }));
+
+    // Rate limiting
+    if (this.config.security.rateLimiting.enabled) {
+      const limiter = rateLimit({
+        windowMs: this.config.security.rateLimiting.windowMs,
+        max: this.config.security.rateLimiting.maxRequests,
+        message: {
+          success: false,
+          error: {
+            message: 'Too many requests, please try again later',
+            code: 'RATE_LIMIT_EXCEEDED'
+          }
+        }
+      });
+      this.app.use('/api/', limiter);
+    }
+
+    // CORS configuration
+    this.app.use(cors({
+      origin: this.config.security.cors.origin,
+      methods: this.config.security.cors.methods,
+      credentials: this.config.security.cors.credentials
+    }));
+
+    // Compression and parsing middleware
+    this.app.use(compression());
+    this.app.use(express.json({ limit: '10mb' }));
+    this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+    // Request logging
+    this.app.use(createApiLogger());
+
+    // Static file serving
+    this.app.use(express.static(this.config.paths.public));
+
+    logger.info('✅ Express application configured');
+  }
+
+  /**
+   * Setup Socket.IO server
+   */
+  async setupSocketIO() {
+    logger.info('🔌 Setting up Socket.IO...');
+    
+    this.io = new Server(this.server, {
+      cors: {
+        origin: this.config.security.cors.origin,
+        methods: this.config.security.cors.methods
+      },
+      maxHttpBufferSize: 1e6, // 1MB
+      pingTimeout: 60000,
+      pingInterval: 25000
+    });
+
+    // Setup socket event handlers
+    setupSocketHandlers(
+      this.io, 
+      this.xl2, 
+      this.gpsLogger, 
+      () => this.csvService.generatePathFromCSV()
+    );
+
+    // Setup event forwarding from devices to clients
+    setupXL2EventForwarding(this.xl2, this.io);
+    setupGPSEventForwarding(this.gpsLogger, this.io);
+
+    logger.info('✅ Socket.IO configured');
+  }
+
+  /**
+   * Setup application routes
+   */
+  async setupRoutes() {
+    logger.info('🛣️ Setting up routes...');
+    
+    // API routes
+    const apiRoutes = createApiRoutes(
+      this.xl2,
+      this.gpsLogger,
+      () => this.csvService.generatePathFromCSV()
+    );
+    this.app.use('/api', apiRoutes);
+
+    // Serve the web interface
+    this.app.get('/', (req, res) => {
+      res.sendFile(join(this.config.paths.public, 'index.html'));
+    });
+
+    // Health check endpoint
+    this.app.get('/health', (req, res) => {
+      res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        version: '2.0.0',
+        uptime: process.uptime()
+      });
+    });
+
+    logger.info('✅ Routes configured');
+  }
+
+  /**
+   * Setup error handling
+   */
+  setupErrorHandling() {
+    logger.info('⚠️ Setting up error handling...');
+    
+    // Express error handler
+    this.app.use(ErrorHandler.expressErrorHandler);
+
+    // Process error handlers
+    process.on('uncaughtException', (error) => {
+      logger.error('Uncaught Exception - Server continues running', error);
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      logger.error('Unhandled Rejection - Server continues running', { 
+        reason: reason?.message || reason,
+        promise: promise.toString()
+      });
+    });
+
+    // Graceful shutdown handlers
+    process.on('SIGINT', () => this.gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => this.gracefulShutdown('SIGTERM'));
+
+    logger.info('✅ Error handling configured');
+  }
+
+  /**
+   * Setup system monitoring for Raspberry Pi
+   */
+  setupSystemMonitoring() {
+    if (!this.config.platform.enableSystemMonitoring) {
+      return;
+    }
+
+    logger.info('📊 Setting up system monitoring...');
+    
+    setInterval(async () => {
+      try {
+        const temp = await systemHealth.getCPUTemperature();
+        const throttled = await systemHealth.isThrottled();
+        const diskSpace = await systemHealth.getDiskSpace();
+        
+        if (temp && temp > RPI_CONFIG.system.maxTemperature) {
+          logger.warn(`High CPU temperature: ${temp.toFixed(1)}°C`);
+          this.io.emit('system-warning', {
+            type: 'temperature',
+            value: temp,
+            threshold: RPI_CONFIG.system.maxTemperature
+          });
+        }
+        
+        if (throttled) {
+          logger.warn('CPU throttling detected - consider better cooling or power supply');
+          this.io.emit('system-warning', {
+            type: 'throttling',
+            message: 'CPU throttling detected'
+          });
+        }
+        
+        if (diskSpace && diskSpace.available < RPI_CONFIG.system.minDiskSpace) {
+          logger.warn(`Low disk space: ${diskSpace.available}MB remaining`);
+          this.io.emit('system-warning', {
+            type: 'disk_space',
+            available: diskSpace.available,
+            threshold: RPI_CONFIG.system.minDiskSpace
+          });
+        }
+      } catch (error) {
+        logger.debug('System monitoring error', error);
+      }
+    }, this.config.measurement.systemHealthCheckInterval);
+
+    logger.info('✅ System monitoring configured');
+  }
+
+  /**
+   * Start the server
+   */
+  async start() {
+    try {
+      await this.initialize();
+      
+      // Start HTTP server
+      await new Promise((resolve, reject) => {
+        this.server.listen(this.config.server.port, this.config.server.host, (error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      logger.info('🚀 XL2 Web Server started successfully', {
+        port: this.config.server.port,
+        host: this.config.server.host,
+        environment: this.config.server.environment,
+        platform: this.config.platform.isRaspberryPi ? 'Raspberry Pi' : 'Other'
+      });
+
+      console.log('');
+      console.log('📡 Server running on:', `http://localhost:${this.config.server.port}`);
+      console.log('🔌 Serial port:', this.config.serial.xl2.port);
+      console.log('🔍 Auto-detect:', this.config.serial.xl2.autoDetect);
+      console.log('');
+      console.log('🎯 Special focus: 12.5Hz dB measurements');
+      console.log('📊 Web interface available at: http://your-ip:' + this.config.server.port);
+      console.log('');
+
+      // Auto-initialize connections
+      await this.autoInitializeConnections();
+
+    } catch (error) {
+      logger.error('❌ Failed to start server', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Auto-initialize GPS and XL2 connections
+   */
+  async autoInitializeConnections() {
+    logger.info('🔍 Starting device auto-detection and connection...');
+    
+    // Start both searches simultaneously
+    const deviceSearchPromises = [];
+    
+    // Auto-connect GPS
+    if (this.config.serial.gps.autoConnect) {
+      deviceSearchPromises.push(this.autoConnectGPS());
+    }
+
+    // Auto-connect XL2
+    if (this.config.serial.xl2.autoDetect) {
+      deviceSearchPromises.push(this.autoConnectXL2());
+    }
+
+    // Wait for both searches to complete
+    if (deviceSearchPromises.length > 0) {
+      await Promise.allSettled(deviceSearchPromises);
+    }
+
+    // Set up periodic XL2 reconnection check
+    this.setupXL2ReconnectionCheck();
+  }
+
+  /**
+   * Setup periodic check for XL2 reconnection
+   */
+  setupXL2ReconnectionCheck() {
+    // Check every 30 seconds if XL2 is disconnected
+    setInterval(async () => {
+      if (!this.xl2.isConnected && this.config.serial.xl2.autoDetect) {
+        logger.info('🔍 XL2 not connected, searching for devices...');
+        try {
+          await this.autoConnectXL2();
+        } catch (error) {
+          logger.debug('XL2 reconnection attempt failed', { error: error.message });
+        }
+      }
+    }, 30000); // Check every 30 seconds
+  }
+
+  /**
+   * Auto-connect to GPS
+   */
+  async autoConnectGPS() {
+    // Skip if already connected
+    if (this.gpsLogger.isGPSConnected) {
+      logger.debug('GPS already connected, skipping auto-connect');
+      return;
+    }
+
+    try {
+      logger.info('🛰️ Searching for GPS devices...');
+      
+      // Scan for all GPS devices first
+      const gpsPorts = await this.gpsLogger.scanForGPS();
+      
+      if (gpsPorts.length === 0) {
+        logger.info('⚠️ No GPS devices found during scan');
+        return;
+      }
+      
+      logger.info(`📡 Found ${gpsPorts.length} potential GPS device(s):`,
+        gpsPorts.map(p => `${p.path} (${p.manufacturer})`));
+      
+      // Try COM4 first (common for VK-162 GPS modules) if it's in the list
+      const com4Port = gpsPorts.find(port => port.path === 'COM4');
+      if (com4Port) {
+        try {
+          logger.info('🛰️ Trying COM4 first (common VK-162 GPS port)...');
+          await this.gpsLogger.connectGPS('COM4');
+          logger.connection('GPS', 'COM4', true);
+          this.io.emit('gps-connected', 'COM4');
+          
+          await this.startGPSLogging();
+          logger.info('✅ Successfully connected to GPS at COM4');
+          return;
+        } catch (error) {
+          logger.debug('Could not connect to COM4', { error: error.message });
+        }
+      }
+      
+      // Try other GPS devices in order
+      const otherPorts = gpsPorts.filter(port => port.path !== 'COM4');
+      
+      for (const gpsPort of otherPorts) {
+        try {
+          logger.info(`🛰️ Trying GPS connection to ${gpsPort.path}...`);
+          await this.gpsLogger.connectGPS(gpsPort.path);
+          logger.connection('GPS', gpsPort.path, true);
+          this.io.emit('gps-connected', gpsPort.path);
+          
+          await this.startGPSLogging();
+          logger.info(`✅ Successfully connected to GPS at ${gpsPort.path}`);
+          return;
+        } catch (error) {
+          logger.debug(`Failed to connect to ${gpsPort.path}`, { error: error.message });
+        }
+      }
+      
+      logger.info('🛰️ No GPS devices could be connected automatically');
+      
+    } catch (error) {
+      logger.error('GPS initialization failed', error);
+    }
+  }
+
+  /**
+   * Start GPS logging if configured
+   */
+  async startGPSLogging() {
+    if (this.config.data.autoStartLogging) {
+      // Small delay to ensure GPS connection is stable
+      setTimeout(() => {
+        try {
+          this.gpsLogger.startLogging();
+          this.io.emit('logging-started', {
+            filePath: this.gpsLogger.logFilePath,
+            startTime: this.gpsLogger.logStartTime
+          });
+          logger.info('📝 Auto-started CSV logging');
+        } catch (error) {
+          logger.error('Auto-start logging failed', error);
+        }
+      }, 1000);
+    }
+  }
+
+  /**
+   * Auto-connect to XL2
+   */
+  async autoConnectXL2() {
+    // Skip if already connected to prevent multiple connections
+    if (this.xl2.isConnected) {
+      logger.debug('XL2 already connected, skipping auto-connect');
+      return;
+    }
+
+    try {
+      logger.info('🔍 Searching for XL2 devices...');
+      
+      // First scan for all XL2 devices
+      const xl2Devices = await this.xl2.scanAllPortsForXL2();
+      const availableXL2s = xl2Devices.filter(device => device.isXL2);
+      
+      if (availableXL2s.length === 0) {
+        logger.info('⚠️ No XL2 devices found during scan');
+        return;
+      }
+      
+      logger.info(`📡 Found ${availableXL2s.length} XL2 device(s):`,
+        availableXL2s.map(d => `${d.port} (${d.deviceInfo})`));
+      
+      // Connect to the first available XL2 device
+      const selectedDevice = availableXL2s[0];
+      logger.info(`🔌 Connecting to XL2 at ${selectedDevice.port}...`);
+      
+      const connectedPort = await this.xl2.connect(selectedDevice.port);
+      
+      // Emit connection events
+      this.io.emit('xl2-connected', connectedPort);
+      this.io.emit('xl2-device-info', this.xl2.deviceInfo || selectedDevice.deviceInfo);
+      
+      logger.info(`✅ Successfully connected to XL2 at ${connectedPort}`);
+      logger.info('🚀 Continuous FFT measurements started automatically');
+      
+      // Notify about other available devices (if any)
+      if (availableXL2s.length > 1) {
+        logger.info(`📋 Note: ${availableXL2s.length - 1} other XL2 device(s) available but not used:`,
+          availableXL2s.slice(1).map(d => d.port));
+      }
+      
+    } catch (error) {
+      logger.warn('❌ Failed to auto-connect to XL2', { error: error.message });
+      
+      // If connection failed, emit disconnected status
+      this.io.emit('xl2-disconnected');
+    }
+  }
+
+  /**
+   * Graceful shutdown
+   */
+  async gracefulShutdown(signal) {
+    if (this.isShuttingDown) {
+      return;
+    }
+    
+    this.isShuttingDown = true;
+    logger.info(`🛑 Received ${signal}, shutting down gracefully...`);
+    
+    try {
+      // Stop accepting new connections
+      this.server.close();
+      
+      // Disconnect devices
+      if (this.xl2) {
+        await this.xl2.disconnect();
+      }
+      
+      if (this.gpsLogger) {
+        await this.gpsLogger.disconnectGPS();
+      }
+      
+      logger.info('✅ Graceful shutdown complete');
+      process.exit(0);
+      
+    } catch (error) {
+      logger.error('❌ Error during shutdown', error);
+      process.exit(1);
+    }
+  }
+
+  /**
+   * Get application instance (for testing)
+   */
+  getApp() {
+    return this.app;
+  }
+
+  /**
+   * Get server instance (for testing)
+   */
+  getServer() {
+    return this.server;
+  }
+}
+
+// Create and start the application
+const xl2Server = new XL2WebServer();
+
+// Start server if this file is run directly
+// More robust check for direct execution on different platforms
+const isMainModule = process.argv[1] && (
+  import.meta.url === `file://${process.argv[1]}` ||
+  import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}` ||
+  import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))
+);
+
+if (isMainModule) {
+  xl2Server.start().catch((error) => {
+    console.error('❌ Failed to start XL2 Web Server:', error.message);
+    console.error(error.stack);
+    process.exit(1);
+  });
+}
+
+// Export for testing
+export { xl2Server, XL2WebServer };
+export default xl2Server;
