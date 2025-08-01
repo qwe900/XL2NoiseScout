@@ -64,7 +64,34 @@ export class AppConfig {
           fftBufferSize: optimalConfig?.fftBufferSize || BUFFER_SIZES.DEFAULT_FFT,
           enableHeatmap: optimalConfig?.enableHeatmap !== false,
           maxHeatmapPoints: optimalConfig?.maxHeatmapPoints || BUFFER_SIZES.MAX_HEATMAP_POINTS,
-          measurementHistorySize: this._getEnvNumber('MEASUREMENT_HISTORY_SIZE', BUFFER_SIZES.MEASUREMENT_HISTORY)
+          measurementHistorySize: this._getEnvNumber('MEASUREMENT_HISTORY_SIZE', BUFFER_SIZES.MEASUREMENT_HISTORY),
+          
+          // Pi 5 specific optimizations
+          systemMonitoringRate: optimalConfig?.systemMonitoringRate || 10000,
+          enableAdvancedFeatures: optimalConfig?.enableAdvancedFeatures || false,
+          
+          // CPU optimization settings
+          cpuOptimization: {
+            useMultipleThreads: optimalConfig?.cpuOptimization?.useMultipleThreads || false,
+            maxWorkerThreads: optimalConfig?.cpuOptimization?.maxWorkerThreads || 1,
+            enableSIMD: optimalConfig?.cpuOptimization?.enableSIMD || false,
+            enableGPUAcceleration: optimalConfig?.cpuOptimization?.enableGPUAcceleration || false
+          },
+          
+          // Memory optimization settings
+          memory: {
+            maxHeapSize: optimalConfig?.memory?.maxHeapSize || '512M',
+            enableMemoryOptimization: optimalConfig?.memory?.enableMemoryOptimization || true,
+            gcStrategy: optimalConfig?.memory?.gcStrategy || 'standard'
+          },
+          
+          // Networking optimizations
+          networking: {
+            enableHTTP2: optimalConfig?.networking?.enableHTTP2 || false,
+            compressionLevel: optimalConfig?.networking?.compressionLevel || 6,
+            keepAliveTimeout: optimalConfig?.networking?.keepAliveTimeout || 5000,
+            maxConnections: optimalConfig?.networking?.maxConnections || 50
+          }
         },
 
         // Security configuration
@@ -115,8 +142,8 @@ export class AppConfig {
           targetFrequency: 12.5,
           frequencyTolerance: 0.1,
           continuousFFTInterval: INTERVALS.CONTINUOUS_FFT,
-          gpsUpdateInterval: INTERVALS.GPS_UPDATE,
-          systemHealthCheckInterval: INTERVALS.SYSTEM_HEALTH_CHECK
+          gpsUpdateInterval: optimalConfig?.gpsUpdateRate || INTERVALS.GPS_UPDATE,
+          systemHealthCheckInterval: optimalConfig?.systemMonitoringRate || INTERVALS.SYSTEM_HEALTH_CHECK
         },
 
         // Platform-specific settings

@@ -446,6 +446,29 @@
             .hz-12-5-value {
                 font-size: 2em;
             }
+            
+            /* System performance mobile adjustments */
+            .system-metrics {
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+                gap: 8px;
+            }
+            
+            .system-metric {
+                padding: 8px;
+            }
+            
+            .system-metric-value {
+                font-size: 1.1em;
+            }
+            
+            .system-performance h3 {
+                font-size: 1em;
+            }
+            
+            .system-performance-toggle {
+                padding: 3px 6px;
+                font-size: 0.7em;
+            }
         }
 
         /* GPS Map Styles */
@@ -575,6 +598,107 @@
             font-size: 10px;
             font-weight: bold;
         }
+
+        /* System Performance Styles */
+        .system-performance {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .system-performance h3 {
+            margin: 0 0 15px 0;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .system-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+        }
+
+        .system-metric {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .system-metric-value {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .system-metric-label {
+            font-size: 0.8em;
+            opacity: 0.9;
+        }
+
+        .system-metric.warning .system-metric-value {
+            color: #ffc107;
+        }
+
+        .system-metric.danger .system-metric-value {
+            color: #dc3545;
+        }
+
+        .system-performance.hidden {
+            display: none;
+        }
+
+        .system-performance-toggle {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 5px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+
+        .system-performance-toggle:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Pi 5 Enhanced Styling */
+        .system-performance.pi5-enhanced {
+            background: linear-gradient(135deg, #6f42c1 0%, #e83e8c 100%);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .system-performance.pi5-enhanced h3::after {
+            content: " (Pi 5)";
+            font-size: 0.8em;
+            opacity: 0.8;
+            font-weight: normal;
+        }
+
+        .system-performance.pi5-enhanced .system-metric {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .system-metric.critical .system-metric-value {
+            color: #ff6b6b;
+            animation: pulse-critical 2s infinite;
+        }
+
+        @keyframes pulse-critical {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -590,6 +714,38 @@
                 <span id="connectionText">Disconnected</span>
             </div>
             <div id="deviceInfo">No device connected</div>
+        </div>
+
+        <!-- System Performance Monitor -->
+        <div class="system-performance" id="systemPerformance">
+            <button class="system-performance-toggle" onclick="toggleSystemPerformance()" title="Hide/Show System Performance">−</button>
+            <h3>⚡ System Performance</h3>
+            <div class="system-metrics">
+                <div class="system-metric">
+                    <div class="system-metric-value" id="cpuTemp">--°C</div>
+                    <div class="system-metric-label">CPU Temp</div>
+                </div>
+                <div class="system-metric">
+                    <div class="system-metric-value" id="memoryUsage">--%</div>
+                    <div class="system-metric-label">Memory</div>
+                </div>
+                <div class="system-metric">
+                    <div class="system-metric-value" id="diskSpace">--GB</div>
+                    <div class="system-metric-label">Free Space</div>
+                </div>
+                <div class="system-metric">
+                    <div class="system-metric-value" id="uptime">--</div>
+                    <div class="system-metric-label">Uptime</div>
+                </div>
+                <div class="system-metric">
+                    <div class="system-metric-value" id="connectedClients">0</div>
+                    <div class="system-metric-label">Clients</div>
+                </div>
+                <div class="system-metric">
+                    <div class="system-metric-value" id="systemLoad">--%</div>
+                    <div class="system-metric-label">CPU Load</div>
+                </div>
+            </div>
         </div>
 
         <!-- 12.5Hz Special Display -->
@@ -2680,6 +2836,26 @@
                     socket.emit('request-current-status');
                 }
             }, 500);
+        });
+    </script>
+    
+    <!-- Include JavaScript modules -->
+    <script src="js/utils.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/settings.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/console.js"></script>
+    <script src="js/connection.js"></script>
+    <script src="js/fft.js"></script>
+    <script src="js/gps.js"></script>
+    <script src="js/system-performance.js"></script>
+    <script src="js/app.js"></script>
+    
+    <script>
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize the main application
+            window.xl2App = new XL2Application();
         });
     </script>
 </body>

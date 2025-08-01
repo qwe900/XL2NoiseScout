@@ -32,6 +32,7 @@ export function setupSocketHandlers(io, xl2, gpsLogger, generatePathFromCSV) {
     setupLoggingHandlers(socket, io, gpsLogger);
     setupDataHandlers(socket, generatePathFromCSV);
     setupStatusHandlers(socket, xl2, gpsLogger);
+    setupSystemPerformanceHandlers(socket, io);
 
     // Handle client disconnection
     socket.on('disconnect', () => {
@@ -474,6 +475,85 @@ export function setupGPSEventForwarding(gpsLogger, io) {
       clients: io.engine.clientsCount
     });
   };
+}
+
+/**
+ * Setup system performance handlers
+ * @param {Object} socket - Socket instance
+ * @param {Object} io - Socket.IO server instance
+ */
+function setupSystemPerformanceHandlers(socket, io) {
+  // Handle system performance requests
+  socket.on('get-system-performance', async () => {
+    try {
+      const performanceData = await getSystemPerformanceData(io);
+      socket.emit('system-performance', performanceData);
+    } catch (error) {
+      logger.error('Failed to get system performance data', error);
+      socket.emit('system-performance', {
+        cpuTemp: null,
+        memoryUsage: null,
+        diskSpace: null,
+        uptime: process.uptime(),
+        connectedClients: io.engine.clientsCount,
+        systemLoad: null,
+        throttled: false
+      });
+    }
+  });
+}
+
+/**
+ * Get system performance data
+ * @param {Object} io - Socket.IO server instance
+ * @returns {Object} Performance data
+ */
+async function getSystemPerformanceData(io) {
+  const { systemHealth } = await import('../../config-rpi.js');
+  
+  // Get system metrics
+  const [cpuTemp, throttled, diskSpace, memoryUsage, systemLoad] = await Promise.all([
+    systemHealth.getCPUTemperature().catch(() => null),
+    systemHealth.isThrottled().catch(() => false),
+    systemHealth.getDiskSpace().catch(() => null),
+    getMemoryUsage().catch(() => null),
+    getSystemLoad().catch(() => null)
+  ]);
+  
+  return {
+    cpuTemp,
+    memoryUsage,
+    diskSpace: diskSpace?.available || null,
+    uptime: process.uptime(),
+    connectedClients: io.engine.clientsCount,
+    systemLoad,
+    throttled
+  };
+}
+
+/**
+ * Get memory usage percentage
+ * @returns {number} Memory usage percentage
+ */
+async function getMemoryUsage() {
+  const os = await import('os');
+  const total = os.totalmem();
+  const free = os.freemem();
+  
+  return ((total - free) / total) * 100;
+}
+
+/**
+ * Get system load percentage (simplified)
+ * @returns {number} System load percentage
+ */
+async function getSystemLoad() {
+  const os = await import('os');
+  const loadavg = os.loadavg();
+  const cpuCount = os.cpus().length;
+  
+  // Use 1-minute load average
+  return Math.min((loadavg[0] / cpuCount) * 100, 100);
 }
 
 export default setupSocketHandlers;

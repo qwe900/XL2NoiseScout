@@ -100,9 +100,21 @@ class GPSLogger {
         if (gpsPorts.length === 0) {
           gpsPorts = ports.filter(port => {
             const path = port.path.toLowerCase();
+            const manufacturer = (port.manufacturer || '').toLowerCase();
+            const productId = (port.productId || '').toLowerCase();
+            
             return path.includes('ttyusb') || 
                    path.includes('ttyacm') || 
-                   path.includes('gps');
+                   path.includes('gps') ||
+                   manufacturer.includes('ch340') || 
+                   manufacturer.includes('ch341') || 
+                   manufacturer.includes('prolific') ||
+                   manufacturer.includes('ftdi') ||
+                   productId.includes('ch340') ||
+                   productId.includes('ch341') ||
+                   port.vendorId === '1a86' || // CH340 vendor ID
+                   port.vendorId === '067b' || // Prolific vendor ID
+                   port.vendorId === '0403';   // FTDI vendor ID
           });
         }
       } else {
@@ -169,6 +181,11 @@ class GPSLogger {
     try {
       console.log(`🛰️ Connecting to GPS on ${portPath}...`);
       
+      // Check if running on Linux and log additional info
+      if (RPI_CONFIG.isRaspberryPi) {
+        console.log(`🐧 Linux detected - using enhanced connection settings for ${portPath}`);
+      }
+      
       // VK-162 typically uses 4800 baud rate, but some clones use 9600
       const baudRates = [4800, 9600];
       let connected = false;
@@ -182,13 +199,23 @@ class GPSLogger {
             baudRate: baudRate,
             dataBits: 8,
             parity: 'none',
-            stopBits: 1
+            stopBits: 1,
+            // Linux-specific options for better compatibility
+            autoOpen: false,
+            lock: false
           });
 
           this.gpsParser = this.gpsPort.pipe(new ReadlineParser({ delimiter: '\r\n' }));
           
           this.gpsParser.on('data', (data) => {
             try {
+              // Log raw NMEA data for debugging (first 10 messages only)
+              if (!this._nmeaLogCount) this._nmeaLogCount = 0;
+              if (this._nmeaLogCount < 10) {
+                console.log(`📡 NMEA: ${data.trim()}`);
+                this._nmeaLogCount++;
+              }
+              
               // Parse NMEA sentences
               this.gps.update(data);
             } catch (error) {
@@ -216,8 +243,16 @@ class GPSLogger {
             
             this.gpsPort.on('error', reject);
             
-            // Timeout after 3 seconds for each baud rate
-            setTimeout(() => reject(new Error('GPS connection timeout')), 3000);
+            // Timeout after 5 seconds for each baud rate (longer for Linux)
+            const timeout = setTimeout(() => reject(new Error('GPS connection timeout')), 5000);
+            
+            // Manually open the port
+            this.gpsPort.open((error) => {
+              if (error) {
+                clearTimeout(timeout);
+                reject(error);
+              }
+            });
           });
 
           connected = true;

@@ -167,11 +167,16 @@ class XL2Application {
             this.gpsManager = new GPSManager(this.socket);
             console.log('✅ GPS Manager initialized');
 
+            // Initialize system performance manager
+            this.systemPerformanceManager = new SystemPerformanceManager(this.socket);
+            console.log('✅ System Performance Manager initialized');
+
             // Make managers globally available for backward compatibility
             window.connectionManager = this.connectionManager;
             window.fftManager = this.fftManager;
             window.gpsManager = this.gpsManager;
             window.consoleManager = this.consoleManager;
+            window.systemPerformanceManager = this.systemPerformanceManager;
 
         } catch (error) {
             console.error('❌ Manager initialization failed:', error);

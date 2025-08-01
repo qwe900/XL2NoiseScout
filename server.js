@@ -203,6 +203,9 @@ class XL2WebServer {
     // Setup event forwarding from devices to clients
     setupXL2EventForwarding(this.xl2, this.io);
     setupGPSEventForwarding(this.gpsLogger, this.io);
+    
+    // Setup system performance broadcasting
+    this.setupSystemPerformanceBroadcast();
 
     logger.info('✅ Socket.IO configured');
   }
@@ -224,6 +227,11 @@ class XL2WebServer {
     // Serve the web interface
     this.app.get('/', (req, res) => {
       res.sendFile(join(this.config.paths.public, 'index.html'));
+    });
+
+    // Serve test page
+    this.app.get('/test-performance', (req, res) => {
+      res.sendFile(join(process.cwd(), 'test-system-performance.html'));
     });
 
     // Health check endpoint
@@ -268,52 +276,102 @@ class XL2WebServer {
   }
 
   /**
-   * Setup system monitoring for Raspberry Pi
+   * Setup system monitoring for Raspberry Pi with Pi 5 enhancements
    */
   setupSystemMonitoring() {
     if (!this.config.platform.enableSystemMonitoring) {
       return;
     }
 
-    logger.info('📊 Setting up system monitoring...');
+    logger.info('📊 Setting up enhanced system monitoring...');
     
     setInterval(async () => {
       try {
-        const temp = await systemHealth.getCPUTemperature();
-        const throttled = await systemHealth.isThrottled();
-        const diskSpace = await systemHealth.getDiskSpace();
+        const { systemHealth, detectPiModel, RPI_CONFIG } = await import('./config-rpi.js');
+        const piModel = await detectPiModel();
         
-        if (temp && temp > RPI_CONFIG.system.maxTemperature) {
-          logger.warn(`High CPU temperature: ${temp.toFixed(1)}°C`);
-          this.io.emit('system-warning', {
-            type: 'temperature',
-            value: temp,
-            threshold: RPI_CONFIG.system.maxTemperature
-          });
-        }
-        
-        if (throttled) {
-          logger.warn('CPU throttling detected - consider better cooling or power supply');
-          this.io.emit('system-warning', {
-            type: 'throttling',
-            message: 'CPU throttling detected'
-          });
-        }
-        
-        if (diskSpace && diskSpace.available < RPI_CONFIG.system.minDiskSpace) {
-          logger.warn(`Low disk space: ${diskSpace.available}MB remaining`);
-          this.io.emit('system-warning', {
-            type: 'disk_space',
-            available: diskSpace.available,
-            threshold: RPI_CONFIG.system.minDiskSpace
-          });
+        if (piModel === 'pi5' || piModel === 'pi4') {
+          // Use enhanced monitoring for Pi 5/4
+          const tempStatus = await systemHealth.getTemperatureStatus();
+          const throttlingDetails = await systemHealth.getThrottlingDetails();
+          const diskSpace = await systemHealth.getDiskSpace();
+          
+          // Temperature warnings with model-specific thresholds
+          if (tempStatus.status === 'warning' || tempStatus.status === 'critical') {
+            logger.warn(`${piModel.toUpperCase()} Temperature ${tempStatus.status}: ${tempStatus.temp.toFixed(1)}°C (threshold: ${tempStatus.threshold}°C)`);
+            this.io.emit('system-warning', {
+              type: 'temperature',
+              value: tempStatus.temp,
+              threshold: tempStatus.threshold,
+              status: tempStatus.status,
+              model: piModel
+            });
+          }
+          
+          // Enhanced throttling detection
+          if (throttlingDetails?.currentlyThrottled) {
+            const reasons = [];
+            if (throttlingDetails.underVoltageDetected) reasons.push('under-voltage');
+            if (throttlingDetails.armFrequencyCapped) reasons.push('frequency-capped');
+            if (throttlingDetails.softTemperatureLimitActive) reasons.push('temperature-limit');
+            
+            logger.warn(`${piModel.toUpperCase()} CPU throttling active: ${reasons.join(', ')}`);
+            this.io.emit('system-warning', {
+              type: 'throttling',
+              message: `CPU throttling: ${reasons.join(', ')}`,
+              details: throttlingDetails,
+              model: piModel
+            });
+          }
+          
+          // Disk space monitoring
+          if (diskSpace && diskSpace.available < RPI_CONFIG.system.minDiskSpace) {
+            logger.warn(`Low disk space: ${diskSpace.available}MB remaining (${diskSpace.usagePercent}% used)`);
+            this.io.emit('system-warning', {
+              type: 'disk_space',
+              available: diskSpace.available,
+              threshold: RPI_CONFIG.system.minDiskSpace,
+              usagePercent: diskSpace.usagePercent
+            });
+          }
+        } else {
+          // Fallback monitoring for older Pi models
+          const temp = await systemHealth.getCPUTemperature();
+          const throttled = await systemHealth.isThrottled();
+          const diskSpace = await systemHealth.getDiskSpace();
+          
+          if (temp && temp > RPI_CONFIG.system.maxTemperature) {
+            logger.warn(`High CPU temperature: ${temp.toFixed(1)}°C`);
+            this.io.emit('system-warning', {
+              type: 'temperature',
+              value: temp,
+              threshold: RPI_CONFIG.system.maxTemperature
+            });
+          }
+          
+          if (throttled) {
+            logger.warn('CPU throttling detected - consider better cooling or power supply');
+            this.io.emit('system-warning', {
+              type: 'throttling',
+              message: 'CPU throttling detected'
+            });
+          }
+          
+          if (diskSpace && diskSpace.available < RPI_CONFIG.system.minDiskSpace) {
+            logger.warn(`Low disk space: ${diskSpace.available}MB remaining`);
+            this.io.emit('system-warning', {
+              type: 'disk_space',
+              available: diskSpace.available,
+              threshold: RPI_CONFIG.system.minDiskSpace
+            });
+          }
         }
       } catch (error) {
         logger.debug('System monitoring error', error);
       }
     }, this.config.measurement.systemHealthCheckInterval);
 
-    logger.info('✅ System monitoring configured');
+    logger.info('✅ Enhanced system monitoring configured');
   }
 
   /**
@@ -383,8 +441,9 @@ class XL2WebServer {
       await Promise.allSettled(deviceSearchPromises);
     }
 
-    // Set up periodic XL2 reconnection check
+    // Set up periodic reconnection checks
     this.setupXL2ReconnectionCheck();
+    this.setupGPSReconnectionCheck();
   }
 
   /**
@@ -402,6 +461,165 @@ class XL2WebServer {
         }
       }
     }, 30000); // Check every 30 seconds
+  }
+
+  /**
+   * Setup periodic check for GPS reconnection
+   */
+  setupGPSReconnectionCheck() {
+    // Check every 45 seconds if GPS is disconnected (offset from XL2 check)
+    setInterval(async () => {
+      if (!this.gpsLogger.isGPSConnected && this.config.serial.gps.autoConnect) {
+        logger.info('🛰️ GPS not connected, searching for devices...');
+        try {
+          await this.autoConnectGPS();
+        } catch (error) {
+          logger.debug('GPS reconnection attempt failed', { error: error.message });
+        }
+      }
+    }, 45000); // Check every 45 seconds (offset from XL2)
+  }
+
+  /**
+   * Setup system performance broadcasting with Pi 5 optimizations
+   */
+  setupSystemPerformanceBroadcast() {
+    // Use Pi-optimized monitoring rate
+    const monitoringRate = this.config.performance.systemMonitoringRate || 10000;
+    
+    logger.info(`📊 Setting up system performance monitoring (${monitoringRate}ms interval)`);
+    
+    // Broadcast system performance at optimized intervals
+    setInterval(async () => {
+      try {
+        const performanceData = await this.getSystemPerformanceData();
+        this.io.emit('system-performance', performanceData);
+        
+        // Log warnings for Pi 5 specific issues
+        if (performanceData.piModel === 'pi5') {
+          if (performanceData.temperatureStatus === 'critical') {
+            logger.warn(`🌡️ Pi 5 Critical Temperature: ${performanceData.cpuTemp}°C`);
+          }
+          if (performanceData.throttlingDetails?.currentlyThrottled) {
+            logger.warn('⚡ Pi 5 CPU Throttling Active', performanceData.throttlingDetails);
+          }
+          if (performanceData.cpuInfo?.currentFreq && performanceData.cpuInfo.currentFreq < 2000) {
+            logger.debug(`🔄 Pi 5 CPU Frequency: ${performanceData.cpuInfo.currentFreq}MHz`);
+          }
+        }
+      } catch (error) {
+        logger.debug('System performance broadcast failed', { error: error.message });
+      }
+    }, monitoringRate);
+
+    // Broadcast client count changes
+    this.io.on('connection', (socket) => {
+      // Broadcast updated client count to all clients
+      this.io.emit('client-count', this.io.engine.clientsCount);
+      
+      socket.on('disconnect', () => {
+        // Broadcast updated client count after disconnect
+        setTimeout(() => {
+          this.io.emit('client-count', this.io.engine.clientsCount);
+        }, 100);
+      });
+    });
+  }
+
+  /**
+   * Get system performance data with Pi 5 enhancements
+   */
+  async getSystemPerformanceData() {
+    const { systemHealth, detectPiModel } = await import('./config-rpi.js');
+    
+    try {
+      // For Pi 5 and Pi 4, use comprehensive system status
+      const piModel = await detectPiModel();
+      
+      if (piModel === 'pi5' || piModel === 'pi4') {
+        const systemStatus = await systemHealth.getSystemStatus();
+        
+        return {
+          // Enhanced data for Pi 5/4
+          cpuTemp: systemStatus.temperature?.temp || null,
+          temperatureStatus: systemStatus.temperature?.status || 'unknown',
+          memoryUsage: systemStatus.memory?.usagePercent || null,
+          memoryDetails: {
+            total: systemStatus.memory?.total || null,
+            available: systemStatus.memory?.available || null,
+            cached: systemStatus.memory?.cached || null
+          },
+          diskSpace: systemStatus.disk?.available || null,
+          diskUsagePercent: systemStatus.disk?.usagePercent || null,
+          uptime: process.uptime(),
+          connectedClients: this.io.engine.clientsCount,
+          systemLoad: null, // Will be calculated separately
+          throttled: systemStatus.throttling?.currentlyThrottled || false,
+          throttlingDetails: systemStatus.throttling,
+          cpuInfo: systemStatus.cpu,
+          piModel: systemStatus.model,
+          timestamp: systemStatus.timestamp
+        };
+      } else {
+        // Fallback for older Pi models or non-Pi systems
+        const [cpuTemp, throttled, diskSpace, memoryUsage, systemLoad] = await Promise.all([
+          systemHealth.getCPUTemperature().catch(() => null),
+          systemHealth.isThrottled().catch(() => false),
+          systemHealth.getDiskSpace().catch(() => null),
+          this.getMemoryUsage().catch(() => null),
+          this.getSystemLoad().catch(() => null)
+        ]);
+        
+        return {
+          cpuTemp,
+          temperatureStatus: cpuTemp ? (cpuTemp > 70 ? 'warning' : 'normal') : 'unknown',
+          memoryUsage,
+          diskSpace: diskSpace?.available || null,
+          uptime: process.uptime(),
+          connectedClients: this.io.engine.clientsCount,
+          systemLoad,
+          throttled,
+          piModel
+        };
+      }
+    } catch (error) {
+      logger.debug('Error getting enhanced system performance data, using fallback', error);
+      
+      // Basic fallback
+      return {
+        cpuTemp: null,
+        memoryUsage: null,
+        diskSpace: null,
+        uptime: process.uptime(),
+        connectedClients: this.io.engine.clientsCount,
+        systemLoad: null,
+        throttled: false,
+        piModel: 'unknown'
+      };
+    }
+  }
+
+  /**
+   * Get memory usage percentage
+   */
+  async getMemoryUsage() {
+    const os = await import('os');
+    const total = os.totalmem();
+    const free = os.freemem();
+    
+    return ((total - free) / total) * 100;
+  }
+
+  /**
+   * Get system load percentage (simplified)
+   */
+  async getSystemLoad() {
+    const os = await import('os');
+    const loadAvg = os.loadavg();
+    const cpuCount = os.cpus().length;
+    
+    // Use 1-minute load average
+    return Math.min((loadAvg[0] / cpuCount) * 100, 100);
   }
 
   /**

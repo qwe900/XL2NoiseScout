@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Performance Test</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .system-performance {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        .system-performance h3 {
+            margin: 0 0 15px 0;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .system-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+        }
+
+        .system-metric {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .system-metric-value {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .system-metric-label {
+            font-size: 0.8em;
+            opacity: 0.9;
+        }
+
+        .system-metric.warning .system-metric-value {
+            color: #ffc107;
+        }
+
+        .system-metric.danger .system-metric-value {
+            color: #dc3545;
+        }
+
+        .system-performance-toggle {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 5px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+
+        .system-performance-toggle:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .system-performance.hidden {
+            display: none;
+        }
+
+        .log {
+            background: #333;
+            color: #fff;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>System Performance Test</h1>
+    
+    <!-- System Performance Monitor -->
+    <div class="system-performance" id="systemPerformance">
+        <button class="system-performance-toggle" onclick="toggleSystemPerformance()" title="Hide/Show System Performance">−</button>
+        <h3>⚡ System Performance</h3>
+        <div class="system-metrics">
+            <div class="system-metric">
+                <div class="system-metric-value" id="cpuTemp">--°C</div>
+                <div class="system-metric-label">CPU Temp</div>
+            </div>
+            <div class="system-metric">
+                <div class="system-metric-value" id="memoryUsage">--%</div>
+                <div class="system-metric-label">Memory</div>
+            </div>
+            <div class="system-metric">
+                <div class="system-metric-value" id="diskSpace">--GB</div>
+                <div class="system-metric-label">Free Space</div>
+            </div>
+            <div class="system-metric">
+                <div class="system-metric-value" id="uptime">--</div>
+                <div class="system-metric-label">Uptime</div>
+            </div>
+            <div class="system-metric">
+                <div class="system-metric-value" id="connectedClients">0</div>
+                <div class="system-metric-label">Clients</div>
+            </div>
+            <div class="system-metric">
+                <div class="system-metric-value" id="systemLoad">--%</div>
+                <div class="system-metric-label">CPU Load</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <script>
+        const socket = io();
+        const log = document.getElementById('log');
+        
+        function addLog(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            log.innerHTML += `[${timestamp}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // Socket connection
+        socket.on('connect', () => {
+            addLog('✅ Connected to server');
+            // Request system performance data
+            socket.emit('get-system-performance');
+        });
+
+        socket.on('disconnect', () => {
+            addLog('❌ Disconnected from server');
+        });
+
+        // System performance data
+        socket.on('system-performance', (data) => {
+            addLog(`📊 System performance: ${JSON.stringify(data)}`);
+            updateSystemPerformance(data);
+        });
+
+        socket.on('client-count', (count) => {
+            addLog(`👥 Client count: ${count}`);
+            document.getElementById('connectedClients').textContent = count;
+        });
+
+        function updateSystemPerformance(data) {
+            // Update CPU temperature
+            if (data.cpuTemp !== null) {
+                document.getElementById('cpuTemp').textContent = `${data.cpuTemp.toFixed(1)}°C`;
+            }
+
+            // Update memory usage
+            if (data.memoryUsage !== null) {
+                document.getElementById('memoryUsage').textContent = `${data.memoryUsage.toFixed(1)}%`;
+            }
+
+            // Update disk space
+            if (data.diskSpace !== null) {
+                const gb = (data.diskSpace / 1024).toFixed(1);
+                document.getElementById('diskSpace').textContent = `${gb}GB`;
+            }
+
+            // Update uptime
+            if (data.uptime !== null) {
+                document.getElementById('uptime').textContent = formatUptime(data.uptime);
+            }
+
+            // Update connected clients
+            document.getElementById('connectedClients').textContent = data.connectedClients.toString();
+
+            // Update system load
+            if (data.systemLoad !== null) {
+                document.getElementById('systemLoad').textContent = `${data.systemLoad.toFixed(1)}%`;
+            }
+        }
+
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            
+            if (days > 0) {
+                return `${days}d ${hours}h`;
+            } else if (hours > 0) {
+                return `${hours}h ${minutes}m`;
+            } else {
+                return `${minutes}m`;
+            }
+        }
+
+        function toggleSystemPerformance() {
+            const container = document.getElementById('systemPerformance');
+            const isHidden = container.classList.contains('hidden');
+            
+            if (isHidden) {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
+            
+            const toggleBtn = container.querySelector('.system-performance-toggle');
+            toggleBtn.textContent = isHidden ? '−' : '+';
+            toggleBtn.title = isHidden ? 'Hide System Performance' : 'Show System Performance';
+        }
+
+        // Request performance data every 5 seconds
+        setInterval(() => {
+            if (socket.connected) {
+                socket.emit('get-system-performance');
+            }
+        }, 5000);
+    </script>
+</body>
+</html>
