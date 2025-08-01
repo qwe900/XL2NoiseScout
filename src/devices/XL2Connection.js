@@ -178,8 +178,26 @@ export class XL2Connection {
    * @returns {Promise<string>} Connected port path
    */
   async connect(portPath = null) {
+    // Add debug logging to track connection attempts
+    logger.debug('XL2 connect() called', {
+      portPath,
+      currentlyConnected: this.isConnected,
+      currentPort: this.port?.path || null,
+      stack: new Error().stack.split('\n')[2]?.trim()
+    });
+
+    // If already connected, check if it's to the same port
     if (this.isConnected) {
-      logger.warn('XL2 already connected, disconnecting first...');
+      const currentPort = this.port?.path;
+      
+      // If no specific port requested, or same port requested, return current connection
+      if (!portPath || currentPort === portPath) {
+        logger.info(`✅ XL2 already connected to ${currentPort}, skipping reconnection`);
+        return currentPort;
+      }
+      
+      // Different port requested, disconnect first
+      logger.info(`🔄 XL2 connected to ${currentPort}, switching to ${portPath}...`);
       await this.disconnect();
     }
 
@@ -187,7 +205,7 @@ export class XL2Connection {
       const selectedPort = portPath || await this.findXL2Device();
       Validator.validatePortPath(selectedPort);
       
-      logger.info(`Connecting to XL2 at: ${selectedPort}`);
+      logger.info(`🔌 Connecting to XL2 at: ${selectedPort}`);
 
       await this._establishConnection(selectedPort);
       await this._initializeConnection();

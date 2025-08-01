@@ -461,7 +461,10 @@ class XL2WebServer {
     
     // Check every 60 seconds if XL2 is disconnected (reduced frequency)
     setInterval(async () => {
-      if (!this.xl2.isConnected && this.config.serial.xl2.autoDetect) {
+      const isConnected = this.xl2.isConnected;
+      const currentPort = this.xl2.port?.path;
+      
+      if (!isConnected && this.config.serial.xl2.autoDetect) {
         // Stop trying after max attempts to avoid spam
         if (reconnectionAttempts >= maxReconnectionAttempts) {
           logger.info(`🔍 XL2 reconnection stopped after ${maxReconnectionAttempts} attempts. Manual connection required.`);
@@ -474,7 +477,10 @@ class XL2WebServer {
         try {
           await this.autoConnectXL2();
           // Reset counter on successful connection
-          reconnectionAttempts = 0;
+          if (this.xl2.isConnected) {
+            reconnectionAttempts = 0;
+            logger.info(`✅ XL2 reconnection successful after ${reconnectionAttempts} attempts`);
+          }
         } catch (error) {
           logger.debug('XL2 reconnection attempt failed', { 
             error: error.message,
@@ -482,9 +488,12 @@ class XL2WebServer {
             maxAttempts: maxReconnectionAttempts
           });
         }
-      } else if (this.xl2.isConnected) {
+      } else if (isConnected) {
         // Reset counter if XL2 is connected
-        reconnectionAttempts = 0;
+        if (reconnectionAttempts > 0) {
+          logger.debug(`✅ XL2 connected to ${currentPort}, resetting reconnection counter`);
+          reconnectionAttempts = 0;
+        }
       }
     }, 60000); // Check every 60 seconds (reduced from 30)
   }
@@ -741,7 +750,8 @@ class XL2WebServer {
   async autoConnectXL2() {
     // Skip if already connected to prevent multiple connections
     if (this.xl2.isConnected) {
-      logger.debug('XL2 already connected, skipping auto-connect');
+      const currentPort = this.xl2.port?.path;
+      logger.debug(`✅ XL2 already connected to ${currentPort}, skipping auto-connect`);
       return;
     }
 
@@ -762,7 +772,7 @@ class XL2WebServer {
       
       // Connect to the first available XL2 device
       const selectedDevice = availableXL2s[0];
-      logger.info(`🔌 Connecting to XL2 at ${selectedDevice.port}...`);
+      logger.info(`🔌 Auto-connecting to XL2 at ${selectedDevice.port}...`);
       
       const connectedPort = await this.xl2.connect(selectedDevice.port);
       
@@ -770,7 +780,7 @@ class XL2WebServer {
       this.io.emit('xl2-connected', connectedPort);
       this.io.emit('xl2-device-info', this.xl2.deviceInfo || selectedDevice.deviceInfo);
       
-      logger.info(`✅ Successfully connected to XL2 at ${connectedPort}`);
+      logger.info(`✅ Successfully auto-connected to XL2 at ${connectedPort}`);
       logger.info('🚀 Continuous FFT measurements started automatically');
       
       // Notify about other available devices (if any)
