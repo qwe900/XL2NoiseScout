@@ -104,12 +104,18 @@ class GPSManager {
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', tileOptions).addTo(this.map);
 
             // Initialize track line with mobile-optimized styling
-            this.trackLine = L.polyline([], {
-                color: CONFIG.GPS.TRACK_COLOR,
-                weight: isMobile ? 2 : 3,
-                opacity: 0.8,
-                smoothFactor: isMobile ? 2 : 1 // More smoothing on mobile for performance
-            }).addTo(this.map);
+            try {
+                this.trackLine = L.polyline([], {
+                    color: CONFIG.GPS.TRACK_COLOR || 'red',
+                    weight: isMobile ? 2 : 3,
+                    opacity: 0.8,
+                    smoothFactor: isMobile ? 2 : 1 // More smoothing on mobile for performance
+                }).addTo(this.map);
+                console.log('GPS track line initialized successfully');
+            } catch (error) {
+                console.error('Error initializing GPS track line:', error);
+                this.trackLine = null;
+            }
 
             // Add mobile-specific controls
             if (isMobile) {
@@ -630,9 +636,36 @@ class GPSManager {
     addTrackPoint(location) {
         if (!location.latitude || !location.longitude) return;
 
+        // Ensure trackLine is initialized
+        if (!this.trackLine) {
+            console.warn('GPS trackLine not initialized, attempting to reinitialize...');
+            this.reinitializeTrackLine();
+            if (!this.trackLine) {
+                console.error('Failed to reinitialize trackLine, skipping track point');
+                return;
+            }
+        }
+
         const newPoint = [location.latitude, location.longitude];
         this.track.push(newPoint);
-        this.trackLine.addLatLng(newPoint);
+        
+        try {
+            this.trackLine.addLatLng(newPoint);
+        } catch (error) {
+            console.error('Error adding point to track line:', error);
+            // Try to reinitialize and retry once
+            this.reinitializeTrackLine();
+            if (this.trackLine) {
+                try {
+                    this.trackLine.addLatLng(newPoint);
+                } catch (retryError) {
+                    console.error('Retry failed:', retryError);
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
 
         // Calculate distance if we have a previous point
         if (this.track.length > 1) {
@@ -647,6 +680,35 @@ class GPSManager {
 
         // Update track points count
         this.updateTrackPointsDisplay(this.track.length);
+    }
+
+    /**
+     * Reinitialize track line if it becomes null
+     */
+    reinitializeTrackLine() {
+        if (!this.map) {
+            console.error('Cannot reinitialize trackLine: map not available');
+            return;
+        }
+
+        try {
+            // Remove old track line if it exists
+            if (this.trackLine && this.map.hasLayer(this.trackLine)) {
+                this.map.removeLayer(this.trackLine);
+            }
+
+            // Create new track line
+            this.trackLine = L.polyline(this.track || [], {
+                color: 'red',
+                weight: 3,
+                opacity: 0.8
+            }).addTo(this.map);
+
+            console.log('GPS track line reinitialized successfully');
+        } catch (error) {
+            console.error('Error reinitializing track line:', error);
+            this.trackLine = null;
+        }
     }
 
     /**
