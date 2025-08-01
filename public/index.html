@@ -1078,11 +1078,12 @@
             addConsoleMessage('Connected to server', 'success');
            
             
-            // Request current status from server
-            setTimeout(() => {
-                console.log('🔄 Requesting current status from server...');
-                socket.emit('request-current-status');
-            }, 200);
+            // DISABLED: Don't request status on connect to avoid interfering with measurements
+            // Server automatically sends current state to new clients
+            // setTimeout(() => {
+            //     console.log('🔄 Requesting current status from server...');
+            //     socket.emit('request-current-status');
+            // }, 200);
         });
 
         socket.on('xl2-connected', (port) => {
@@ -1491,8 +1492,10 @@
         }
 
         function refreshStatus() {
-            addConsoleMessage('🔄 Refreshing device status...', 'info');
-            socket.emit('request-current-status');
+            // DISABLED: Server automatically manages status updates
+            // Manual status requests could interfere with ongoing measurements
+            addConsoleMessage('🔄 Server manages status automatically - no manual refresh needed', 'info');
+            // socket.emit('request-current-status');
         }
 
         function scanForDevices() {

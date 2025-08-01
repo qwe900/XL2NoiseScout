@@ -619,13 +619,17 @@ class XL2Application {
 
     /**
      * Request current status from server
+     * DISABLED: Server automatically sends status updates to avoid interfering with measurements
      */
     requestCurrentStatus() {
         try {
-            if (this.socket && this.socket.connected) {
-                this.socket.emit(CONFIG.SOCKET_EVENTS.REQUEST_CURRENT_STATUS);
-                console.log('🔄 Requested current status from server');
-            }
+            // DISABLED: Don't request status to avoid interfering with ongoing measurements
+            // Server automatically sends current state to clients when they connect
+            console.log('🔄 Status requests disabled - server manages status automatically');
+            // if (this.socket && this.socket.connected) {
+            //     this.socket.emit(CONFIG.SOCKET_EVENTS.REQUEST_CURRENT_STATUS);
+            //     console.log('🔄 Requested current status from server');
+            // }
         } catch (error) {
             console.error('❌ Failed to request current status:', error);
         }
@@ -638,23 +642,24 @@ class XL2Application {
         try {
             ui.showLoading('Refreshing application...');
             
-            // Request current status
-            this.requestCurrentStatus();
+            // DISABLED: Don't request status to avoid interfering with measurements
+            // Server automatically manages status updates
+            // this.requestCurrentStatus();
             
-            // Refresh ports
-            if (this.connectionManager) {
-                this.connectionManager.refreshPorts();
-            }
+            // DISABLED: Don't refresh ports to avoid interfering with measurements
+            // if (this.connectionManager) {
+            //     this.connectionManager.refreshPorts();
+            // }
             
-            // Refresh GPS ports
-            if (this.gpsManager) {
-                this.gpsManager.scanGPS();
-            }
+            // DISABLED: Don't scan GPS to avoid interfering with measurements
+            // if (this.gpsManager) {
+            //     this.gpsManager.scanGPS();
+            // }
             
             setTimeout(() => {
                 ui.hideLoading();
-                ui.showToast('Application refreshed', 'success');
-            }, 2000);
+                ui.showToast('Server manages connections automatically - no manual refresh needed', 'info');
+            }, 1000);
             
         } catch (error) {
             console.error('❌ Failed to refresh application:', error);

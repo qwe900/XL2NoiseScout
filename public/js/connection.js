@@ -618,9 +618,13 @@ class ConnectionManager {
 
     /**
      * Request current status from server
+     * DISABLED: Server automatically sends status updates to avoid interfering with measurements
      */
     requestCurrentStatus() {
-        this.socket.emit(CONFIG.SOCKET_EVENTS.REQUEST_CURRENT_STATUS);
+        // DISABLED: Don't request status to avoid interfering with ongoing measurements
+        // Server automatically sends current state to clients when they connect
+        console.log('🔄 Status requests disabled - server manages status automatically');
+        // this.socket.emit(CONFIG.SOCKET_EVENTS.REQUEST_CURRENT_STATUS);
     }
 }
 
