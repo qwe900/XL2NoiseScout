@@ -434,18 +434,69 @@ class GPSManager {
         // Update map
         this.updateMapPosition(location);
         
+        // Auto-start tracking if XL2 FFT is measuring and GPS has fix
+        this.checkAutoTracking(location);
+        
         // Handle tracking
         if (this.isTracking) {
             this.addTrackPoint(location);
         }
         
         // Debounced update for performance
-        this.debouncedLocationUpdate = this.debouncedLocationUpdate || 
+        this.debouncedLocationUpdate = this.debouncedLocationUpdate ||
             Utils.debounce(() => {
                 this.processLocationUpdate(location);
             }, CONFIG.GPS.UPDATE_DEBOUNCE);
         
         this.debouncedLocationUpdate();
+    }
+
+    /**
+     * Check if auto-tracking should be enabled
+     */
+    checkAutoTracking(location) {
+        // Only auto-start if not already tracking
+        if (this.isTracking) return;
+        
+        // Check if GPS has a good fix
+        const hasGoodFix = location.fix && (location.fix === '3D' || location.fix === '2D' || location.satellites >= 4);
+        if (!hasGoodFix) return;
+        
+        // Check if XL2 FFT is measuring
+        const isXL2Measuring = this.isXL2FFTMeasuring();
+        if (!isXL2Measuring) return;
+        
+        // Auto-start tracking
+        console.log('🚀 Auto-starting GPS tracking: XL2 FFT measuring + GPS fix available');
+        this.toggleTracking();
+        ui.showToast('Auto-started GPS tracking: XL2 measuring + GPS fix', 'success');
+    }
+    
+    /**
+     * Check if XL2 FFT is currently measuring
+     */
+    isXL2FFTMeasuring() {
+        // Check if the main app has an FFT manager and it's running
+        if (window.xl2App && window.xl2App.fftManager) {
+            return window.xl2App.fftManager.isContinuousRunning;
+        }
+        
+        // Fallback: check button states
+        const startBtn = document.getElementById('startFFTBtn');
+        const stopBtn = document.getElementById('stopFFTBtn');
+        
+        if (startBtn && stopBtn) {
+            return startBtn.disabled && !stopBtn.disabled;
+        }
+        
+        // Fallback: check FFT status text
+        const fftStatus = document.getElementById('fftStatus');
+        if (fftStatus) {
+            const statusText = fftStatus.textContent.toLowerCase();
+            return statusText.includes('live') || statusText.includes('running');
+        }
+        
+        return false;
     }
 
     /**
