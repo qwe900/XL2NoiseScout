@@ -1076,7 +1076,7 @@
         // Socket event handlers
         socket.on('connect', () => {
             addConsoleMessage('Connected to server', 'success');
-            refreshPorts();
+           
             
             // Request current status from server
             setTimeout(() => {
@@ -2066,12 +2066,6 @@
                 console.error('❌ Error initializing FFT Canvas:', error);
             }
             
-            try {
-                refreshPorts();
-                console.log('✅ Port refresh completed');
-            } catch (error) {
-                console.error('❌ Error refreshing ports:', error);
-            }
             
             // Draw test spectrum after 2 seconds to verify canvas works
             setTimeout(() => {
@@ -2083,15 +2077,15 @@
                 }
             }, 2000);
             
-            // Auto-scan for XL2 devices after a short delay
-            setTimeout(() => {
-                console.log('🔍 Auto-scanning for devices...');
-                try {
-                    scanForDevices();
-                } catch (error) {
-                    console.error('❌ Error scanning for devices:', error);
-                }
-            }, 1000);
+            // DISABLED: Don't auto-scan for devices on page load
+            // setTimeout(() => {
+            //     console.log('🔍 Auto-scanning for devices...');
+            //     try {
+            //         scanForDevices();
+            //     } catch (error) {
+            //         console.error('❌ Error scanning for devices:', error);
+            //     }
+            // }, 1000);
         });
 
         // Custom command input enter key
