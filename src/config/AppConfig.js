@@ -44,17 +44,17 @@ export class AppConfig {
           environment: this._getEnvString('NODE_ENV', 'development')
         },
 
-        // Serial port configuration
+        // Serial port configuration - FIXED PORTS, NO AUTO-DETECTION
         serial: {
           xl2: {
-            port: this._getEnvString('XL2_SERIAL_PORT', this._getDefaultXL2Port()),
+            port: this._getEnvString('XL2_SERIAL_PORT', '/dev/ttyACM0'), // Fixed XL2 port
             baudRate: SERIAL_CONFIG.XL2_BAUD_RATE,
-            autoDetect: this._getEnvBoolean('XL2_AUTO_DETECT', true)
+            autoDetect: false // DISABLED - use fixed port only
           },
           gps: {
-            ports: RPI_CONFIG.serialPorts.gps,
+            port: this._getEnvString('GPS_SERIAL_PORT', '/dev/ttyACM1'), // Fixed GPS port
             baudRates: SERIAL_CONFIG.GPS_BAUD_RATES,
-            autoConnect: this._getEnvBoolean('GPS_AUTO_CONNECT', true)
+            autoConnect: false // DISABLED - use fixed port only
           }
         },
 

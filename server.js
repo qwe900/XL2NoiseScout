@@ -408,9 +408,8 @@ class XL2WebServer {
       console.log('📊 Web interface available at: http://your-ip:' + this.config.server.port);
       console.log('');
 
-      // Auto-initialize connections DISABLED to prevent interference with measurements
-      // await this.autoInitializeConnections();
-      logger.info('🔍 Auto-device detection DISABLED - manual connection required to prevent measurement interference');
+      // Connect to configured devices directly (no scanning)
+      await this.connectConfiguredDevices();
 
     } catch (error) {
       logger.error('❌ Failed to start server', error);
@@ -419,32 +418,29 @@ class XL2WebServer {
   }
 
   /**
-   * Auto-initialize GPS and XL2 connections
+   * Connect to configured devices directly (no scanning)
    */
-  async autoInitializeConnections() {
-    logger.info('🔍 Starting device auto-detection and connection...');
+  async connectConfiguredDevices() {
+    logger.info('🔌 Connecting to configured devices (no scanning)...');
     
-    // Start both searches simultaneously
-    const deviceSearchPromises = [];
+    const connectionPromises = [];
     
-    // Auto-connect GPS
-    if (this.config.serial.gps.autoConnect) {
-      deviceSearchPromises.push(this.autoConnectGPS());
+    // Connect to configured GPS port
+    if (this.config.serial.gps.port) {
+      connectionPromises.push(this.connectConfiguredGPS());
     }
 
-    // Auto-connect XL2
-    if (this.config.serial.xl2.autoDetect) {
-      deviceSearchPromises.push(this.autoConnectXL2());
+    // Connect to configured XL2 port
+    if (this.config.serial.xl2.port) {
+      connectionPromises.push(this.connectConfiguredXL2());
     }
 
-    // Wait for both searches to complete
-    if (deviceSearchPromises.length > 0) {
-      await Promise.allSettled(deviceSearchPromises);
+    // Wait for both connections to complete
+    if (connectionPromises.length > 0) {
+      await Promise.allSettled(connectionPromises);
     }
 
-    // Set up periodic reconnection checks
-    this.setupXL2ReconnectionCheck();
-    this.setupGPSReconnectionCheck();
+    logger.info('✅ Configured device connections completed');
   }
 
   /**
@@ -677,68 +673,29 @@ class XL2WebServer {
   }
 
   /**
-   * Auto-connect to GPS
+   * Connect to configured GPS port (no scanning)
    */
-  async autoConnectGPS() {
+  async connectConfiguredGPS() {
     // Skip if already connected
     if (this.gpsLogger.isGPSConnected) {
-      logger.debug('GPS already connected, skipping auto-connect');
+      logger.debug('GPS already connected, skipping configured connect');
       return;
     }
 
+    const configuredPort = this.config.serial.gps.port;
+    
     try {
-      logger.info('🛰️ Searching for GPS devices...');
+      logger.info(`🛰️ Connecting to configured GPS port: ${configuredPort}`);
       
-      // Scan for all GPS devices first
-      const gpsPorts = await this.gpsLogger.scanForGPS();
+      await this.gpsLogger.connectGPS(configuredPort);
+      logger.connection('GPS', configuredPort, true);
+      this.io.emit('gps-connected', configuredPort);
       
-      if (gpsPorts.length === 0) {
-        logger.info('⚠️ No GPS devices found during scan');
-        return;
-      }
-      
-      logger.info(`📡 Found ${gpsPorts.length} potential GPS device(s):`,
-        gpsPorts.map(p => `${p.path} (${p.manufacturer})`));
-      
-      // Try COM4 first (common for VK-162 GPS modules) if it's in the list
-      const com4Port = gpsPorts.find(port => port.path === 'COM4');
-      if (com4Port) {
-        try {
-          logger.info('🛰️ Trying COM4 first (common VK-162 GPS port)...');
-          await this.gpsLogger.connectGPS('COM4');
-          logger.connection('GPS', 'COM4', true);
-          this.io.emit('gps-connected', 'COM4');
-          
-          await this.startGPSLogging();
-          logger.info('✅ Successfully connected to GPS at COM4');
-          return;
-        } catch (error) {
-          logger.debug('Could not connect to COM4', { error: error.message });
-        }
-      }
-      
-      // Try other GPS devices in order
-      const otherPorts = gpsPorts.filter(port => port.path !== 'COM4');
-      
-      for (const gpsPort of otherPorts) {
-        try {
-          logger.info(`🛰️ Trying GPS connection to ${gpsPort.path}...`);
-          await this.gpsLogger.connectGPS(gpsPort.path);
-          logger.connection('GPS', gpsPort.path, true);
-          this.io.emit('gps-connected', gpsPort.path);
-          
-          await this.startGPSLogging();
-          logger.info(`✅ Successfully connected to GPS at ${gpsPort.path}`);
-          return;
-        } catch (error) {
-          logger.debug(`Failed to connect to ${gpsPort.path}`, { error: error.message });
-        }
-      }
-      
-      logger.info('🛰️ No GPS devices could be connected automatically');
+      await this.startGPSLogging();
+      logger.info(`✅ Successfully connected to GPS at ${configuredPort}`);
       
     } catch (error) {
-      logger.error('GPS initialization failed', error);
+      logger.error(`❌ Failed to connect to configured GPS port ${configuredPort}`, error);
     }
   }
 
@@ -764,52 +721,32 @@ class XL2WebServer {
   }
 
   /**
-   * Auto-connect to XL2
+   * Connect to configured XL2 port (no scanning)
    */
-  async autoConnectXL2() {
+  async connectConfiguredXL2() {
     // Skip if already connected or initializing to prevent multiple connections
     if (this.xl2.isConnected || this.xl2.isInitializing) {
       const currentPort = this.xl2.port?.path;
-      logger.debug(`✅ XL2 already connected/initializing (${currentPort}), skipping auto-connect`);
+      logger.debug(`✅ XL2 already connected/initializing (${currentPort}), skipping configured connect`);
       return;
     }
 
+    const configuredPort = this.config.serial.xl2.port;
+    
     try {
-      logger.info('🔍 Searching for XL2 devices...');
+      logger.info(`🔌 Connecting to configured XL2 port: ${configuredPort}`);
       
-      // First scan for all XL2 devices
-      const xl2Devices = await this.xl2.scanAllPortsForXL2();
-      const availableXL2s = xl2Devices.filter(device => device.isXL2);
-      
-      if (availableXL2s.length === 0) {
-        logger.info('⚠️ No XL2 devices found during scan');
-        return;
-      }
-      
-      logger.info(`📡 Found ${availableXL2s.length} XL2 device(s):`,
-        availableXL2s.map(d => `${d.port} (${d.deviceInfo})`));
-      
-      // Connect to the first available XL2 device
-      const selectedDevice = availableXL2s[0];
-      logger.info(`🔌 Auto-connecting to XL2 at ${selectedDevice.port}...`);
-      
-      const connectedPort = await this.xl2.connect(selectedDevice.port);
+      const connectedPort = await this.xl2.connect(configuredPort);
       
       // Emit connection events
       this.io.emit('xl2-connected', connectedPort);
-      this.io.emit('xl2-device-info', this.xl2.deviceInfo || selectedDevice.deviceInfo);
+      this.io.emit('xl2-device-info', this.xl2.deviceInfo || 'Connected');
       
-      logger.info(`✅ Successfully auto-connected to XL2 at ${connectedPort}`);
+      logger.info(`✅ Successfully connected to XL2 at ${connectedPort}`);
       logger.info('🚀 Continuous FFT measurements started automatically');
       
-      // Notify about other available devices (if any)
-      if (availableXL2s.length > 1) {
-        logger.info(`📋 Note: ${availableXL2s.length - 1} other XL2 device(s) available but not used:`,
-          availableXL2s.slice(1).map(d => d.port));
-      }
-      
     } catch (error) {
-      logger.warn('❌ Failed to auto-connect to XL2', { error: error.message });
+      logger.error(`❌ Failed to connect to configured XL2 port ${configuredPort}`, error);
       
       // If connection failed, emit disconnected status
       this.io.emit('xl2-disconnected');
