@@ -110,7 +110,8 @@ const CONFIG = {
         MEASUREMENTS: '/api/measurements',
         MEASUREMENTS_12_5HZ: '/api/measurements/12_5hz',
         CSV_DATA: '/api/csv-data',
-        EXPORT_CSV: '/api/export-csv'
+        EXPORT_CSV: '/api/export-csv',
+        LOGS: '/api/logs'
     },
 
     // WebSocket Events

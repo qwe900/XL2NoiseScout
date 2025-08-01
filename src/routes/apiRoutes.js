@@ -9,6 +9,8 @@ import { HTTP_STATUS } from '../constants.js';
 import { logger } from '../utils/logger.js';
 import { ErrorHandler, asyncHandler } from '../utils/errors.js';
 import { validateRequest } from '../utils/validation.js';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Create API routes
@@ -220,11 +222,24 @@ export function createApiRoutes(xl2, gpsLogger, generatePathFromCSV) {
 
   router.get('/logging/status', asyncHandler(async (req, res) => {
     const status = gpsLogger.getStatus().logging;
-    
+
     res.json({
       success: true,
       data: status
     });
+  }));
+
+  // List CSV log files
+  router.get('/logs', asyncHandler(async (req, res) => {
+    try {
+      const logsDir = path.join(process.cwd(), 'logs');
+      const files = await fs.promises.readdir(logsDir);
+      const csvFiles = files.filter(f => f.toLowerCase().endsWith('.csv'));
+      res.json({ success: true, data: csvFiles });
+    } catch (error) {
+      logger.error('Error reading log directory', error);
+      res.json({ success: false, message: 'Failed to read logs' });
+    }
   }));
 
   // CSV data endpoints
