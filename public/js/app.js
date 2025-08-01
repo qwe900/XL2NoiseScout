@@ -513,17 +513,20 @@ class XL2Application {
      */
     handleWindowUnload(e) {
         try {
-            // Disconnect from devices
-            if (this.connectionManager && this.connectionManager.isConnected) {
-                this.connectionManager.disconnect();
-            }
+            // DISABLED: Do NOT disconnect devices when clients leave
+            // Measurements should continue running independently of web clients
+            // if (this.connectionManager && this.connectionManager.isConnected) {
+            //     this.connectionManager.disconnect();
+            // }
 
-            if (this.gpsManager && this.gpsManager.isConnected) {
-                this.gpsManager.disconnectGPS();
-            }
+            // if (this.gpsManager && this.gpsManager.isConnected) {
+            //     this.gpsManager.disconnectGPS();
+            // }
 
             // Save current state
             this.saveApplicationState();
+
+            console.log('🔌 Client disconnecting - devices remain connected for continuous measurements');
 
         } catch (error) {
             console.error('❌ Window unload handler failed:', error);
@@ -809,10 +812,11 @@ For more information, see the README.md file.
                 this.consoleManager.destroy();
             }
 
-            // Disconnect socket
-            if (this.socket) {
-                this.socket.disconnect();
-            }
+            // DISABLED: Don't disconnect socket to avoid triggering cleanup
+            // Let the browser handle socket cleanup naturally
+            // if (this.socket) {
+            //     this.socket.disconnect();
+            // }
 
             // Remove event listeners
             window.removeEventListener('load', this.handleWindowLoad);
