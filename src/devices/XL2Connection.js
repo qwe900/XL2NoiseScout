@@ -43,6 +43,12 @@ export class XL2Connection {
     this.fftFrequencies = null;
     this.lastDeviceInfo = null;
     this.eventEmitter = eventEmitter;
+    
+    // Add locks to prevent concurrent operations
+    this.connectionLock = false;
+    this.initializationLock = false;
+    this.commandQueue = [];
+    this.isProcessingQueue = false;
   }
 
   /**
@@ -291,11 +297,15 @@ export class XL2Connection {
     await this.sendCommand('*IDN?');
     logger.info('XL2 device identified, starting FFT initialization...');
     
-    // Auto-initialize FFT on connection
-    await this.initializeFFT();
-    
-    // Start continuous FFT measurements
-    await this.startContinuousFFT();
+    // Auto-initialize FFT on connection only if not already initialized
+    if (!this.isContinuous && !this.isInitializing) {
+      await this.initializeFFT();
+      
+      // Start continuous FFT measurements
+      await this.startContinuousFFT();
+    } else {
+      logger.info('XL2 already initialized and measuring, skipping auto-initialization');
+    }
   }
 
   /**
@@ -618,6 +628,12 @@ export class XL2Connection {
       throw new ConnectionError('Not connected to XL2 device');
     }
     
+    // If already measuring continuously, don't reinitialize
+    if (this.isContinuous && this.isMeasuring) {
+      logger.info('XL2 already initialized and measuring continuously, skipping initialization');
+      return;
+    }
+    
     if (this.isInitializing) {
       logger.info('FFT initialization already in progress, waiting...');
       // Wait for current initialization to complete
@@ -632,31 +648,35 @@ export class XL2Connection {
     try {
       logger.info('Initializing XL2 for FFT measurements...');
       
-      // Reset device
-      await this.sendCommand('*RST');
-      await this._delay(1000);
-    
-      // Set to FFT mode
-      await this.sendCommand('MEAS:FUNC FFT');
-      await this._delay(500);
+      // Reset device only if not already measuring
+      if (!this.isContinuous) {
+        await this.sendCommand('*RST');
+        await this._delay(1000);
       
-      // Start measurement loop
-      await this.sendCommand('INIT START');
-      await this._delay(2000);
-      
-      // Set FFT parameters for 12.5Hz precision
-      await this.sendCommand(`MEAS:FFT:ZOOM ${FREQUENCY_CONFIG.DEFAULT_FFT_ZOOM}`);
-      await this._delay(300);
-      
-      await this.sendCommand(`MEAS:FFT:FSTART ${FREQUENCY_CONFIG.DEFAULT_FFT_START}`);
-      await this._delay(300);
-      
-      // Initial measurement to verify setup
-      await this.sendCommand('MEAS:INIT');
-      await this._delay(500);
-      
-      logger.info('XL2 FFT initialization complete - ready for continuous measurements');
-      this.isMeasuring = true;
+        // Set to FFT mode
+        await this.sendCommand('MEAS:FUNC FFT');
+        await this._delay(500);
+        
+        // Start measurement loop
+        await this.sendCommand('INIT START');
+        await this._delay(2000);
+        
+        // Set FFT parameters for 12.5Hz precision
+        await this.sendCommand(`MEAS:FFT:ZOOM ${FREQUENCY_CONFIG.DEFAULT_FFT_ZOOM}`);
+        await this._delay(300);
+        
+        await this.sendCommand(`MEAS:FFT:FSTART ${FREQUENCY_CONFIG.DEFAULT_FFT_START}`);
+        await this._delay(300);
+        
+        // Initial measurement to verify setup
+        await this.sendCommand('MEAS:INIT');
+        await this._delay(500);
+        
+        logger.info('XL2 FFT initialization complete - ready for continuous measurements');
+        this.isMeasuring = true;
+      } else {
+        logger.info('XL2 already measuring, skipping hardware initialization');
+      }
       
     } finally {
       this.isInitializing = false;
@@ -688,9 +708,11 @@ export class XL2Connection {
     logger.info('Starting continuous FFT measurements...');
     this.isContinuous = true;
     
-    // Get initial frequency bins
-    await this.getFFTFrequencies();
-    await this._delay(500);
+    // Get initial frequency bins only if not already available
+    if (!this.fftFrequencies || this.fftFrequencies.length === 0) {
+      await this.getFFTFrequencies();
+      await this._delay(500);
+    }
     
     // Start continuous spectrum updates
     this.measurementInterval = setInterval(async () => {
@@ -699,7 +721,6 @@ export class XL2Connection {
       }
       
       try {
-        logger.debug('Triggering new FFT measurement...');
         await this.sendCommand('MEAS:INIT');
         await this._delay(300);
         await this.getFFTSpectrum();
@@ -742,6 +763,13 @@ export class XL2Connection {
     if (!this.isConnected) {
       throw new ConnectionError('Not connected to XL2 device');
     }
+    
+    // Prevent multiple simultaneous frequency requests
+    if (this.fftFrequencies && this.fftFrequencies.length > 0) {
+      logger.debug('FFT frequencies already available, skipping request');
+      return;
+    }
+    
     await this.sendCommand('MEAS:FFT:F?');
   }
 

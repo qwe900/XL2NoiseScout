@@ -147,6 +147,13 @@ function setupXL2Handlers(socket, io, xl2) {
   // FFT operations
   socket.on('xl2-initialize-fft', async () => {
     try {
+      // Only initialize if not already connected and measuring
+      if (xl2.isConnected && xl2.isContinuous) {
+        logger.info('XL2 already initialized and measuring, skipping initialization');
+        socket.emit('xl2-fft-initialized');
+        return;
+      }
+      
       await xl2.initializeFFT();
       io.emit('xl2-fft-initialized');
     } catch (error) {
@@ -157,6 +164,19 @@ function setupXL2Handlers(socket, io, xl2) {
 
   socket.on('xl2-get-fft-frequencies', async () => {
     try {
+      // If frequencies are already available, emit them directly
+      if (xl2.fftFrequencies && xl2.fftFrequencies.length > 0) {
+        const hz12_5Index = 0; // First bin with FSTART 12.5
+        const hz12_5Frequency = xl2.fftFrequencies[0];
+        
+        socket.emit('xl2-fft-frequencies', {
+          frequencies: xl2.fftFrequencies,
+          hz12_5_index: hz12_5Index,
+          hz12_5_frequency: hz12_5Frequency
+        });
+        return;
+      }
+      
       await xl2.getFFTFrequencies();
     } catch (error) {
       ErrorHandler.handle(error, 'XL2 Get FFT Frequencies');
@@ -175,6 +195,13 @@ function setupXL2Handlers(socket, io, xl2) {
 
   socket.on('xl2-start-continuous-fft', async () => {
     try {
+      // Only start if not already running
+      if (xl2.isContinuous) {
+        logger.info('Continuous FFT already running, skipping start request');
+        socket.emit('xl2-continuous-fft-started');
+        return;
+      }
+      
       await xl2.startContinuousFFT();
       io.emit('xl2-continuous-fft-started');
     } catch (error) {
