@@ -882,13 +882,13 @@
                     <span id="scanStatus" style="margin-left: 10px; font-style: italic;"></span>
                 </div>
                 
-                <!-- Device Selection -->
-                <div class="input-group">
+                <!-- REMOVED: Device Selection - Server manages connections automatically -->
+                <!-- <div class="input-group">
                     <label for="deviceSelect" style="display: block; margin-bottom: 5px; font-weight: bold;">📱 Found XL2 Devices:</label>
                     <select id="deviceSelect" class="select" size="3" style="height: 80px;">
                         <option value="">Click "Scan All COM Ports" to find XL2 devices</option>
                     </select>
-                </div>
+                </div> -->
                 
                 <!-- Manual Port Selection (fallback) -->
                 <div class="input-group" style="margin-top: 15px;">
@@ -908,7 +908,7 @@
                 
                 <!-- Connection Status -->
                 <div class="alert alert-info" style="margin-top: 15px;">
-                    <strong>🔌 Status:</strong> <span id="connectionStatus">Not connected</span>
+                    <strong>🔌 Status:</strong> <span id="connectionStatusText">Server manages connections automatically</span>
                 </div>
             </div>
 
@@ -966,6 +966,12 @@
             <!-- GPS Control -->
             <div class="card">
                 <h2>🛰️ GPS Control</h2>
+                
+                <!-- GPS Status -->
+                <div class="alert alert-info" style="margin-bottom: 15px;">
+                    <strong>🛰️ GPS Status:</strong> <span id="gpsConnectionStatus">Not connected</span>
+                </div>
+                
                 <div class="input-group">
                     <button onclick="scanGPS()" id="gpsScanBtn" class="btn btn-warning">🔍 Scan GPS Ports</button>
                     <span id="gpsScanStatus" style="margin-left: 10px; font-style: italic;"></span>
@@ -1342,6 +1348,14 @@
                 gpsStatus.style.fontWeight = 'bold';
             }
             
+            // Update GPS connection status indicator
+            const gpsConnectionStatus = document.getElementById('gpsConnectionStatus');
+            if (gpsConnectionStatus) {
+                gpsConnectionStatus.textContent = `Connected to ${port}`;
+                gpsConnectionStatus.style.color = '#28a745';
+                gpsConnectionStatus.style.fontWeight = 'bold';
+            }
+            
             // Enable map controls
             const centerMapBtn = document.getElementById('centerMapBtn');
             if (centerMapBtn) centerMapBtn.disabled = false;
@@ -1364,6 +1378,14 @@
                 gpsStatus.textContent = 'Not connected';
                 gpsStatus.style.color = '#dc3545';
                 gpsStatus.style.fontWeight = 'normal';
+            }
+            
+            // Update GPS connection status indicator
+            const gpsConnectionStatus = document.getElementById('gpsConnectionStatus');
+            if (gpsConnectionStatus) {
+                gpsConnectionStatus.textContent = 'Not connected';
+                gpsConnectionStatus.style.color = '#dc3545';
+                gpsConnectionStatus.style.fontWeight = 'normal';
             }
             
             // Clear GPS data

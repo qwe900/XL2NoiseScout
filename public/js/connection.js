@@ -59,14 +59,14 @@ class ConnectionManager {
         });
 
         this.socket.on(CONFIG.SOCKET_EVENTS.XL2_DATA, (data) => {
-            if (typeof console !== 'undefined') {
-                console.addMessage(data, 'rx', 'RX:');
+            if (typeof addConsoleMessage !== 'undefined') {
+                addConsoleMessage(data, 'rx', 'RX:');
             }
         });
 
         this.socket.on(CONFIG.SOCKET_EVENTS.XL2_COMMAND, (command) => {
-            if (typeof console !== 'undefined') {
-                console.addMessage(command, 'tx', 'TX:');
+            if (typeof addConsoleMessage !== 'undefined') {
+                addConsoleMessage(command, 'tx', 'TX:');
             }
         });
     }
