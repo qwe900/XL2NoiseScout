@@ -295,6 +295,19 @@ class XL2Application {
             const welcomeMessage = isMobile ? 'XL2 Interface ready' : 'XL2 Web Interface ready';
             ui.showToast(welcomeMessage, 'success');
 
+            // Update CSV download link with latest log file if available
+            fetch(CONFIG.API.LOGS)
+                .then(res => res.json())
+                .then(result => {
+                    if (result.success && result.data.length > 0) {
+                        const link = document.getElementById('downloadCsvBtn');
+                        if (link) {
+                            link.href = `/logs/${result.data[0]}`;
+                        }
+                    }
+                })
+                .catch(() => {});
+
         } catch (error) {
             console.error('❌ Window load handler failed:', error);
             ui.showToast('Initialization error', 'error');

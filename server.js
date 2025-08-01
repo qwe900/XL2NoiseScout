@@ -172,6 +172,7 @@ class XL2WebServer {
 
     // Static file serving
     this.app.use(express.static(this.config.paths.public));
+    this.app.use('/logs', express.static(this.config.paths.logs));
 
     logger.info('✅ Express application configured');
   }
