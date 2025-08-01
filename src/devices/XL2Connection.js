@@ -183,6 +183,7 @@ export class XL2Connection {
       portPath,
       currentlyConnected: this.isConnected,
       currentPort: this.port?.path || null,
+      isInitializing: this.isInitializing,
       stack: new Error().stack.split('\n')[2]?.trim()
     });
 
@@ -199,6 +200,19 @@ export class XL2Connection {
       // Different port requested, disconnect first
       logger.info(`🔄 XL2 connected to ${currentPort}, switching to ${portPath}...`);
       await this.disconnect();
+    }
+
+    // Prevent concurrent connection attempts
+    if (this.isInitializing) {
+      logger.info('🔄 XL2 connection already in progress, waiting...');
+      // Wait for current initialization to complete
+      while (this.isInitializing) {
+        await this._delay(100);
+      }
+      // Return current connection if successful
+      if (this.isConnected) {
+        return this.port?.path;
+      }
     }
 
     try {
@@ -605,7 +619,11 @@ export class XL2Connection {
     }
     
     if (this.isInitializing) {
-      logger.info('FFT initialization already in progress');
+      logger.info('FFT initialization already in progress, waiting...');
+      // Wait for current initialization to complete
+      while (this.isInitializing) {
+        await this._delay(100);
+      }
       return;
     }
     
@@ -657,6 +675,14 @@ export class XL2Connection {
     if (this.isContinuous) {
       logger.info('Continuous FFT already running');
       return;
+    }
+
+    // Prevent starting continuous FFT while initializing
+    if (this.isInitializing) {
+      logger.info('Cannot start continuous FFT while initializing, waiting...');
+      while (this.isInitializing) {
+        await this._delay(100);
+      }
     }
     
     logger.info('Starting continuous FFT measurements...');

@@ -95,7 +95,7 @@ class XL2Application {
             ui.showToast('Connected to server', 'success');
             
             // Server will automatically send current status to new clients
-            // No need to request it manually
+            // Do NOT trigger any device operations here to avoid interfering with ongoing measurements
         });
 
         this.socket.on('disconnect', (reason) => {
@@ -542,7 +542,7 @@ class XL2Application {
             console.log('📱 Tab visible - resuming activity');
             
             // Server will send updated status automatically
-            // No need to request it manually
+            // Do NOT request status to avoid triggering device operations
         }
     }
 

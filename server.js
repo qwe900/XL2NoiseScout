@@ -457,6 +457,7 @@ class XL2WebServer {
     }
     
     let reconnectionAttempts = 0;
+    let isReconnecting = false; // Prevent concurrent reconnection attempts
     const maxReconnectionAttempts = 10; // Stop after 10 failed attempts
     
     // Check every 60 seconds if XL2 is disconnected (reduced frequency)
@@ -464,13 +465,14 @@ class XL2WebServer {
       const isConnected = this.xl2.isConnected;
       const currentPort = this.xl2.port?.path;
       
-      if (!isConnected && this.config.serial.xl2.autoDetect) {
+      if (!isConnected && this.config.serial.xl2.autoDetect && !isReconnecting) {
         // Stop trying after max attempts to avoid spam
         if (reconnectionAttempts >= maxReconnectionAttempts) {
           logger.info(`🔍 XL2 reconnection stopped after ${maxReconnectionAttempts} attempts. Manual connection required.`);
           return;
         }
         
+        isReconnecting = true;
         reconnectionAttempts++;
         logger.info(`🔍 XL2 not connected, searching for devices... (attempt ${reconnectionAttempts}/${maxReconnectionAttempts})`);
         
@@ -479,14 +481,16 @@ class XL2WebServer {
           // Reset counter on successful connection
           if (this.xl2.isConnected) {
             reconnectionAttempts = 0;
-            logger.info(`✅ XL2 reconnection successful after ${reconnectionAttempts} attempts`);
+            logger.info(`✅ XL2 reconnection successful`);
           }
         } catch (error) {
-          logger.debug('XL2 reconnection attempt failed', { 
+          logger.debug('XL2 reconnection attempt failed', {
             error: error.message,
             attempt: reconnectionAttempts,
             maxAttempts: maxReconnectionAttempts
           });
+        } finally {
+          isReconnecting = false;
         }
       } else if (isConnected) {
         // Reset counter if XL2 is connected
@@ -748,10 +752,10 @@ class XL2WebServer {
    * Auto-connect to XL2
    */
   async autoConnectXL2() {
-    // Skip if already connected to prevent multiple connections
-    if (this.xl2.isConnected) {
+    // Skip if already connected or initializing to prevent multiple connections
+    if (this.xl2.isConnected || this.xl2.isInitializing) {
       const currentPort = this.xl2.port?.path;
-      logger.debug(`✅ XL2 already connected to ${currentPort}, skipping auto-connect`);
+      logger.debug(`✅ XL2 already connected/initializing (${currentPort}), skipping auto-connect`);
       return;
     }
 

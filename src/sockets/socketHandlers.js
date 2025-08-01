@@ -21,7 +21,7 @@ export function setupSocketHandlers(io, xl2, gpsLogger, generatePathFromCSV) {
       totalClients: io.engine.clientsCount 
     });
     
-    // Send current state to new client
+    // Send current state to new client (without triggering device operations)
     setTimeout(() => {
       sendCurrentStateToClient(socket, xl2, gpsLogger);
     }, 100);
