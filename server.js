@@ -450,17 +450,43 @@ class XL2WebServer {
    * Setup periodic check for XL2 reconnection
    */
   setupXL2ReconnectionCheck() {
-    // Check every 30 seconds if XL2 is disconnected
+    // Allow disabling auto-reconnection via environment variable
+    if (process.env.DISABLE_XL2_AUTO_RECONNECT === 'true') {
+      logger.info('🔍 XL2 auto-reconnection disabled via environment variable');
+      return;
+    }
+    
+    let reconnectionAttempts = 0;
+    const maxReconnectionAttempts = 10; // Stop after 10 failed attempts
+    
+    // Check every 60 seconds if XL2 is disconnected (reduced frequency)
     setInterval(async () => {
       if (!this.xl2.isConnected && this.config.serial.xl2.autoDetect) {
-        logger.info('🔍 XL2 not connected, searching for devices...');
+        // Stop trying after max attempts to avoid spam
+        if (reconnectionAttempts >= maxReconnectionAttempts) {
+          logger.info(`🔍 XL2 reconnection stopped after ${maxReconnectionAttempts} attempts. Manual connection required.`);
+          return;
+        }
+        
+        reconnectionAttempts++;
+        logger.info(`🔍 XL2 not connected, searching for devices... (attempt ${reconnectionAttempts}/${maxReconnectionAttempts})`);
+        
         try {
           await this.autoConnectXL2();
+          // Reset counter on successful connection
+          reconnectionAttempts = 0;
         } catch (error) {
-          logger.debug('XL2 reconnection attempt failed', { error: error.message });
+          logger.debug('XL2 reconnection attempt failed', { 
+            error: error.message,
+            attempt: reconnectionAttempts,
+            maxAttempts: maxReconnectionAttempts
+          });
         }
+      } else if (this.xl2.isConnected) {
+        // Reset counter if XL2 is connected
+        reconnectionAttempts = 0;
       }
-    }, 30000); // Check every 30 seconds
+    }, 60000); // Check every 60 seconds (reduced from 30)
   }
 
   /**
