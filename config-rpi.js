@@ -13,18 +13,11 @@ export const RPI_CONFIG = {
   serialPorts: {
     // Primary XL2 device ports (try in order)
     xl2: [
-      '/dev/xl2',        // Custom udev rule symlink
-      '/dev/ttyUSB0',    // Most common
       '/dev/ttyACM0',    // Some USB-serial adapters
-      '/dev/ttyAMA0',    // Pi UART (if using GPIO)
     ],
     
     // GPS device ports (try in order)
     gps: [
-      '/dev/gps',        // Custom udev rule symlink
-      '/dev/ttyACM0',    // Common GPS port (VK-162 and similar)
-      '/dev/ttyUSB1',    // Second USB device
-      '/dev/ttyUSB2',    // Third USB device
       '/dev/ttyACM1',    // Alternative GPS port
     ]
   },
@@ -195,7 +188,7 @@ export const RPI_CONFIG = {
   // Logging settings for Pi
   logging: {
     level: 'info',
-    maxFileSize: '10M',
+    maxFileSize: '100M',
     maxFiles: 5,
     logDirectory: '/home/pi/xl2-logs'
   }
