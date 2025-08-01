@@ -245,6 +245,13 @@ Datum,Uhrzeit,Pegel_12.5Hz_dB,GPS_Latitude,GPS_Longitude,GPS_Altitude_m,GPS_Sate
 - **⚡ Real-time**: Logs every FFT measurement (~1.5s intervals)
 - **🔄 Auto-Sync**: GPS and measurement data synchronized
 
+### **Heatmap Visualization**
+
+The web UI can render all logged dB values on a map as a heatmap. A local copy
+of the [Leaflet.heat](https://github.com/Leaflet/Leaflet.heat) plugin is bundled
+under `public/vendor/leaflet-heat/`. This ensures heatmap functionality even on
+systems without internet access.
+
 ### **GPS Setup Workflow**
 
 1. **🔌 Connect VK-162**: Plug USB GPS module into server
