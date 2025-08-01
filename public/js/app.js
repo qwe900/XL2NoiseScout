@@ -94,10 +94,8 @@ class XL2Application {
             console.log('🔌 Socket connected:', this.socket.id);
             ui.showToast('Connected to server', 'success');
             
-            // Request current status
-            setTimeout(() => {
-                this.requestCurrentStatus();
-            }, 500);
+            // Server will automatically send current status to new clients
+            // No need to request it manually
         });
 
         this.socket.on('disconnect', (reason) => {
@@ -282,21 +280,9 @@ class XL2Application {
                 this.setupMobileFeatures();
             }
 
-            // Auto-scan for devices (delayed more on mobile for better UX)
-            const scanDelay = isMobile ? 2000 : 1000;
-            setTimeout(() => {
-                if (this.connectionManager) {
-                    this.connectionManager.scanForDevices();
-                }
-            }, scanDelay);
-
-            // Auto-connect if enabled (delayed more on mobile)
-            const connectDelay = isMobile ? 4000 : 2000;
-            setTimeout(() => {
-                if (this.connectionManager) {
-                    this.connectionManager.autoConnect();
-                }
-            }, connectDelay);
+            // Server handles device scanning and auto-connection
+            // Client just waits for status updates from server
+            console.log('🔌 Client ready - server manages device connections');
 
             // Mark as initialized
             this.isInitialized = true;
@@ -555,8 +541,8 @@ class XL2Application {
             // Tab is visible - resume normal activity
             console.log('📱 Tab visible - resuming activity');
             
-            // Request current status
-            this.requestCurrentStatus();
+            // Server will send updated status automatically
+            // No need to request it manually
         }
     }
 
@@ -857,9 +843,9 @@ function refreshPorts() {
 }
 
 function refreshStatus() {
-    if (window.app) {
-        return window.app.requestCurrentStatus();
-    }
+    // Server manages status updates automatically
+    // This function is kept for backward compatibility but does nothing
+    console.log('📊 Status refresh requested - server handles this automatically');
 }
 
 function scanForDevices() {

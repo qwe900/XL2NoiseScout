@@ -2830,10 +2830,11 @@
                 initializeGPSMap();
                 initializeHeatmap();
                 
-                // Request current status after everything is initialized
+                // Client connected - server will automatically send current status
                 if (socket.connected) {
-                    console.log('🔄 Page loaded - requesting current status...');
-                    socket.emit('request-current-status');
+                    console.log('🔄 Page loaded - waiting for server status update...');
+                    // Server automatically sends current state to new clients
+                    // No need to request it manually
                 }
             }, 500);
         });
