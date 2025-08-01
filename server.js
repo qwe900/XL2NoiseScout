@@ -408,8 +408,9 @@ class XL2WebServer {
       console.log('📊 Web interface available at: http://your-ip:' + this.config.server.port);
       console.log('');
 
-      // Auto-initialize connections
-      await this.autoInitializeConnections();
+      // Auto-initialize connections DISABLED to prevent interference with measurements
+      // await this.autoInitializeConnections();
+      logger.info('🔍 Auto-device detection DISABLED - manual connection required to prevent measurement interference');
 
     } catch (error) {
       logger.error('❌ Failed to start server', error);
@@ -450,6 +451,12 @@ class XL2WebServer {
    * Setup periodic check for XL2 reconnection
    */
   setupXL2ReconnectionCheck() {
+    // DISABLED: Auto-reconnection completely disabled to prevent measurement interference
+    logger.info('🔍 XL2 auto-reconnection DISABLED - manual connection required to prevent measurement interference');
+    return;
+    
+    // Original code commented out to prevent any automatic device operations
+    /*
     // Allow disabling auto-reconnection via environment variable
     if (process.env.DISABLE_XL2_AUTO_RECONNECT === 'true') {
       logger.info('🔍 XL2 auto-reconnection disabled via environment variable');
@@ -500,12 +507,19 @@ class XL2WebServer {
         }
       }
     }, 60000); // Check every 60 seconds (reduced from 30)
+    */
   }
 
   /**
    * Setup periodic check for GPS reconnection
    */
   setupGPSReconnectionCheck() {
+    // DISABLED: GPS auto-reconnection disabled to prevent any interference
+    logger.info('🛰️ GPS auto-reconnection DISABLED - manual connection required');
+    return;
+    
+    // Original code commented out
+    /*
     // Check every 45 seconds if GPS is disconnected (offset from XL2 check)
     setInterval(async () => {
       if (!this.gpsLogger.isGPSConnected && this.config.serial.gps.autoConnect) {
@@ -517,6 +531,7 @@ class XL2WebServer {
         }
       }
     }, 45000); // Check every 45 seconds (offset from XL2)
+    */
   }
 
   /**

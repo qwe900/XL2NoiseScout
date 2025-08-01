@@ -16,12 +16,12 @@ import { Validator } from '../utils/validation.js';
  */
 export function setupSocketHandlers(io, xl2, gpsLogger, generatePathFromCSV) {
   io.on('connection', (socket) => {
-    logger.info('Client connected', { 
-      socketId: socket.id, 
-      totalClients: io.engine.clientsCount 
+    logger.info('Client connected', {
+      socketId: socket.id,
+      totalClients: io.engine.clientsCount
     });
     
-    // Send current state to new client (without triggering device operations)
+    // Send current state to new client (PASSIVE ONLY - no device operations)
     setTimeout(() => {
       sendCurrentStateToClient(socket, xl2, gpsLogger);
     }, 100);
@@ -36,9 +36,9 @@ export function setupSocketHandlers(io, xl2, gpsLogger, generatePathFromCSV) {
 
     // Handle client disconnection
     socket.on('disconnect', () => {
-      logger.info('Client disconnected', { 
-        socketId: socket.id, 
-        remainingClients: io.engine.clientsCount - 1 
+      logger.info('Client disconnected', {
+        socketId: socket.id,
+        remainingClients: io.engine.clientsCount - 1
       });
     });
   });
@@ -51,16 +51,16 @@ export function setupSocketHandlers(io, xl2, gpsLogger, generatePathFromCSV) {
  * @param {Object} gpsLogger - GPSLogger instance
  */
 function sendCurrentStateToClient(socket, xl2, gpsLogger) {
-  logger.debug('Sending current state to new client', { socketId: socket.id });
+  logger.debug('Sending PASSIVE current state to new client (no device operations)', { socketId: socket.id });
   
   try {
-    // XL2 Device Status
+    // XL2 Device Status - PASSIVE ONLY
     const xl2Status = xl2.getStatus();
     if (xl2Status.isConnected) {
       socket.emit('xl2-connected', xl2Status.port);
       socket.emit('xl2-device-info', xl2Status.deviceInfo || 'Connected');
       
-      // Send FFT frequencies if available
+      // Send FFT frequencies if already available (no new requests)
       if (xl2.fftFrequencies && xl2.fftFrequencies.length > 0) {
         const hz12_5Index = 0; // First bin with FSTART 12.5
         const hz12_5Frequency = xl2.fftFrequencies[0];
@@ -75,7 +75,7 @@ function sendCurrentStateToClient(socket, xl2, gpsLogger) {
       socket.emit('xl2-disconnected');
     }
     
-    // GPS Status
+    // GPS Status - PASSIVE ONLY
     const gpsStatus = gpsLogger.getStatus();
     if (gpsStatus.gps.connected) {
       socket.emit('gps-connected', gpsStatus.gps.port);
@@ -86,7 +86,7 @@ function sendCurrentStateToClient(socket, xl2, gpsLogger) {
       socket.emit('gps-disconnected');
     }
     
-    // Logging Status
+    // Logging Status - PASSIVE ONLY
     if (gpsStatus.logging.active) {
       socket.emit('logging-started', {
         filePath: gpsStatus.logging.filePath,
@@ -96,9 +96,11 @@ function sendCurrentStateToClient(socket, xl2, gpsLogger) {
       socket.emit('logging-stopped');
     }
     
-    // Send complete status objects
+    // Send complete status objects - PASSIVE ONLY
     socket.emit('xl2-status', xl2Status);
     socket.emit('gps-status-response', gpsStatus);
+    
+    logger.debug('Passive state sent to client - no device operations triggered');
     
   } catch (error) {
     logger.error('Error sending current state to client', error);
